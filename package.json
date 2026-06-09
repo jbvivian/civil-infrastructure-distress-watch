@@ -8,9 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "scrape": "tsx scripts/scrape.ts",
+    "scrape:source": "tsx scripts/scrape.ts --source"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "geist": "^1.7.2",
     "lucide-react": "^1.17.0",
     "next": "16.2.7",
@@ -25,6 +28,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5",
     "vitest": "^4.1.8"
   }

@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { ingestDocument } from "@/lib/repository";
 import type { ExtractedSignal, SourceType } from "@/lib/types";
@@ -38,6 +39,11 @@ export async function POST(request: Request) {
       text: body.text,
       signals: body.signals,
     });
+    revalidatePath("/");
+    revalidatePath("/admin/ingest");
+    revalidatePath("/projects");
+    revalidatePath("/signals");
+    revalidatePath("/sources");
     return NextResponse.json({ count });
   } catch (error) {
     return NextResponse.json(

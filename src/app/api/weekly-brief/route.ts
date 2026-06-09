@@ -5,6 +5,7 @@ export async function GET() {
   const projectMap = new Map(dataset.projects.map((project) => [project.id, project]));
   const severityScore = { High: 3, Medium: 2, Low: 1 };
   const signals = [...dataset.signals]
+    .filter((signal) => signal.projectId)
     .sort(
       (a, b) =>
         severityScore[b.severity] - severityScore[a.severity] ||
@@ -19,7 +20,7 @@ export async function GET() {
     "> Fictional prototype data. Do not use for real-world decisions.",
     "",
     ...signals.flatMap((signal, index) => {
-      const project = projectMap.get(signal.projectId);
+      const project = signal.projectId ? projectMap.get(signal.projectId) : undefined;
       return [
         `### ${index + 1}. ${signal.title}`,
         `**Project:** ${project?.name ?? "Unknown"}  `,

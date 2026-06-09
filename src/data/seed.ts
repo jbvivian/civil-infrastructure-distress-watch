@@ -593,4 +593,5 @@ export const seedDataset: Dataset = {
       type: "Signal" as const,
     },
   ]),
+  scrapeRuns: [],
 };

@@ -19,11 +19,13 @@ export const distressCategories = [
 
 export const severityLevels = ["Low", "Medium", "High"] as const;
 export const confidenceLevels = ["Low", "Medium", "High"] as const;
+export const scrapeStatuses = ["Success", "Failed", "Partial"] as const;
 
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type DistressCategory = (typeof distressCategories)[number];
 export type Severity = (typeof severityLevels)[number];
 export type Confidence = (typeof confidenceLevels)[number];
+export type ScrapeStatus = (typeof scrapeStatuses)[number];
 
 export type SourceType =
   | "Town board agenda"
@@ -62,7 +64,7 @@ export interface Project {
 
 export interface Signal {
   id: string;
-  projectId: string;
+  projectId: string | null;
   sourceDocumentIds: string[];
   title: string;
   category: DistressCategory;
@@ -75,6 +77,7 @@ export interface Signal {
   alternativeExplanation: string;
   severity: Severity;
   confidence: Confidence;
+  reviewStatus?: "Assigned" | "Unassigned";
 }
 
 export interface Source {
@@ -86,18 +89,38 @@ export interface Source {
   url: string;
   lastChecked: string;
   fictional: boolean;
+  active?: boolean;
+  connector?: "html";
 }
 
 export interface SourceDocument {
   id: string;
   sourceId: string;
-  projectId: string;
+  projectId: string | null;
   title: string;
   url: string;
   publishedAt: string;
   ingestedAt: string;
   text: string;
   fictional: boolean;
+  fetchedAt?: string;
+  statusCode?: number;
+  contentHash?: string;
+  rawText?: string;
+  scrapeStatus?: ScrapeStatus;
+  errorMessage?: string;
+}
+
+export interface ScrapeRun {
+  id: string;
+  sourceId: string;
+  startedAt: string;
+  finishedAt: string;
+  status: ScrapeStatus;
+  documentsFound: number;
+  signalsExtracted: number;
+  errorMessage?: string;
+  urlFetched: string;
 }
 
 export interface ProjectEvent {
@@ -115,6 +138,7 @@ export interface Dataset {
   sources: Source[];
   documents: SourceDocument[];
   events: ProjectEvent[];
+  scrapeRuns: ScrapeRun[];
 }
 
 export interface ExtractedSignal

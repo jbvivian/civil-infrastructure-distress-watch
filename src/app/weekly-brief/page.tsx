@@ -6,12 +6,14 @@ import { formatDate } from "@/lib/format";
 import { getDataset } from "@/lib/repository";
 
 export const metadata = { title: "Weekly Brief" };
+export const dynamic = "force-dynamic";
 
 export default async function WeeklyBriefPage() {
   const dataset = await getDataset();
   const projectMap = new Map(dataset.projects.map((project) => [project.id, project]));
   const severityScore = { High: 3, Medium: 2, Low: 1 };
   const signals = [...dataset.signals]
+    .filter((signal) => signal.projectId)
     .sort(
       (a, b) =>
         severityScore[b.severity] - severityScore[a.severity] ||
@@ -41,7 +43,7 @@ export default async function WeeklyBriefPage() {
       </div>
       <div className="space-y-4">
         {signals.map((signal, index) => {
-          const project = projectMap.get(signal.projectId);
+          const project = signal.projectId ? projectMap.get(signal.projectId) : undefined;
           if (!project) return null;
           return (
             <article key={signal.id} className="panel p-5">

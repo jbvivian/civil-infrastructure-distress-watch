@@ -3,6 +3,7 @@ import { ProjectList, type ProjectListItem } from "@/components/project-list";
 import { getDataset } from "@/lib/repository";
 
 export const metadata = { title: "Projects" };
+export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
   const dataset = await getDataset();

@@ -14,7 +14,7 @@ export interface SignalListItem {
   category: DistressCategory;
   signalType: string;
   projectName: string;
-  projectSlug: string;
+  projectSlug: string | null;
   sourceTitle: string;
   sourceUrl: string;
   dateObserved: string;
@@ -88,9 +88,13 @@ export function SignalList({ signals }: { signals: SignalListItem[] }) {
                     </div>
                     <h2 className="mt-3 text-lg font-semibold text-[#20394e]">{signal.title}</h2>
                     <p className="mt-1 text-sm text-[#66717e]">
-                      <Link href={`/projects/${signal.projectSlug}`} className="font-semibold text-[#355b78] hover:underline">
-                        {signal.projectName}
-                      </Link>
+                      {signal.projectSlug ? (
+                        <Link href={`/projects/${signal.projectSlug}`} className="font-semibold text-[#355b78] hover:underline">
+                          {signal.projectName}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold text-[#a45f13]">{signal.projectName}</span>
+                      )}
                       {" · "}
                       <span className="font-mono text-xs">{formatDate(signal.dateObserved)}</span>
                     </p>

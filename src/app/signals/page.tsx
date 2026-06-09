@@ -3,6 +3,7 @@ import { SignalList, type SignalListItem } from "@/components/signal-list";
 import { getDataset } from "@/lib/repository";
 
 export const metadata = { title: "Signals" };
+export const dynamic = "force-dynamic";
 
 export default async function SignalsPage() {
   const dataset = await getDataset();
@@ -11,13 +12,13 @@ export default async function SignalsPage() {
 
   const items = dataset.signals
     .map((signal): SignalListItem | null => {
-      const project = projectMap.get(signal.projectId);
+      const project = signal.projectId ? projectMap.get(signal.projectId) : undefined;
       const document = documentMap.get(signal.sourceDocumentIds[0]);
-      if (!project || !document) return null;
+      if (!document) return null;
       return {
         ...signal,
-        projectName: project.name,
-        projectSlug: project.slug,
+        projectName: project?.name ?? "Unassigned live signal",
+        projectSlug: project?.slug ?? null,
         sourceTitle: document.title,
         sourceUrl: document.url,
       };

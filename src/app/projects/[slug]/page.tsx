@@ -5,6 +5,8 @@ import { CategoryBadge, ConfidenceBadge, SeverityBadge, StatusBadge } from "@/co
 import { formatCurrency, formatDate, monthsBetween, percentDelta } from "@/lib/format";
 import { getDataset } from "@/lib/repository";
 
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const dataset = await getDataset();

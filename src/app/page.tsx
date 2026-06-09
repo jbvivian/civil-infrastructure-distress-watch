@@ -21,11 +21,14 @@ const statusIcons = {
   "Confirmed Issue": FileSearch,
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   const dataset = await getDataset();
   const projectMap = new Map(dataset.projects.map((project) => [project.id, project]));
   const documentMap = new Map(dataset.documents.map((document) => [document.id, document]));
   const recentSignals = [...dataset.signals]
+    .filter((signal) => signal.projectId)
     .sort((a, b) => b.dateObserved.localeCompare(a.dateObserved))
     .slice(0, 6);
   const reviewProjects = dataset.projects
@@ -91,7 +94,7 @@ export default async function HomePage() {
           </div>
           <div className="divide-y">
             {recentSignals.map((signal) => {
-              const project = projectMap.get(signal.projectId);
+              const project = signal.projectId ? projectMap.get(signal.projectId) : undefined;
               const document = documentMap.get(signal.sourceDocumentIds[0]);
               if (!project) return null;
               return (

@@ -17,6 +17,17 @@ export function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+export function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(value));
+}
+
 export function monthsBetween(start: string, end: string): number {
   const from = new Date(start);
   const to = new Date(end);
