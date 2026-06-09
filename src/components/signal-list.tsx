@@ -25,6 +25,8 @@ export interface SignalListItem {
   alternativeExplanation: string;
   severity: Severity;
   confidence: Confidence;
+  assignmentStatus?: "Assigned" | "Unassigned" | "Needs Review";
+  dataOrigin?: "Seed" | "Manual" | "Scraped";
 }
 
 export function SignalList({ signals }: { signals: SignalListItem[] }) {
@@ -85,6 +87,16 @@ export function SignalList({ signals }: { signals: SignalListItem[] }) {
                       <SeverityBadge severity={signal.severity} />
                       <CategoryBadge category={signal.category} />
                       <ConfidenceBadge confidence={signal.confidence} />
+                      {signal.assignmentStatus && signal.assignmentStatus !== "Assigned" && (
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-amber-800">
+                          {signal.assignmentStatus}
+                        </span>
+                      )}
+                      {signal.dataOrigin === "Scraped" && (
+                        <span className="inline-flex items-center rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold leading-none text-slate-650">
+                          Scraped
+                        </span>
+                      )}
                     </div>
                     <h2 className="mt-3 text-lg font-semibold text-[#20394e]">{signal.title}</h2>
                     <p className="mt-1 text-sm text-[#66717e]">

@@ -4,11 +4,7 @@ import {
 } from "../src/lib/scrape-service";
 
 function printResult(result: Awaited<ReturnType<typeof runSourceScrape>>) {
-  const detail = result.duplicate
-    ? "duplicate content; no new document"
-    : result.documentCreated
-      ? `new document; ${result.signalsExtracted} signals`
-      : "no document";
+  const detail = `${result.documentsImported}/${result.documentsFound} imported, ${result.duplicateDocumentsSkipped} duplicates, ${result.signalsExtracted} signals`;
   console.log(`${result.sourceId}: ${result.status} (${detail})`);
   if (result.errorMessage) console.log(`  ${result.errorMessage}`);
 }

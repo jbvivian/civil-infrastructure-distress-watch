@@ -15,16 +15,23 @@ interface ScrapeSourceSummary {
   name: string;
   url: string;
   active: boolean;
+  sourceType: string;
+  jurisdiction: string;
+  connectorType: string;
+  lastCheckedAt?: string;
   lastSuccessfulAt?: string;
-  latestStatus?: "Success" | "Failed" | "Partial";
+  latestStatus?: "Not checked" | "Success" | "Failed" | "Partial";
   latestError?: string;
+  documentsFound: number;
+  signalsExtracted: number;
 }
 
 interface ScrapeResult {
   sourceId: string;
   status: "Success" | "Failed" | "Partial";
-  documentCreated: boolean;
-  duplicate: boolean;
+  documentsFound: number;
+  documentsImported: number;
+  duplicateDocumentsSkipped: number;
   signalsExtracted: number;
   errorMessage?: string;
 }
@@ -58,13 +65,20 @@ export function ScrapeControls({
       const succeeded = result.results.filter((item) => item.status === "Success").length;
       const partial = result.results.filter((item) => item.status === "Partial").length;
       const failed = result.results.filter((item) => item.status === "Failed").length;
-      const documents = result.results.filter((item) => item.documentCreated).length;
+      const documents = result.results.reduce(
+        (total, item) => total + item.documentsImported,
+        0,
+      );
+      const duplicates = result.results.reduce(
+        (total, item) => total + item.duplicateDocumentsSkipped,
+        0,
+      );
       const signals = result.results.reduce(
         (total, item) => total + item.signalsExtracted,
         0,
       );
       setMessage(
-        `${succeeded} successful, ${partial} partial, ${failed} failed. ${documents} new document${documents === 1 ? "" : "s"} and ${signals} signal${signals === 1 ? "" : "s"} saved.`,
+        `${succeeded} successful, ${partial} partial, ${failed} failed. ${documents} document${documents === 1 ? "" : "s"} imported, ${duplicates} duplicate${duplicates === 1 ? "" : "s"} skipped, and ${signals} signal${signals === 1 ? "" : "s"} extracted.`,
       );
       router.refresh();
     } catch (error) {
@@ -105,7 +119,7 @@ export function ScrapeControls({
         {sources.map((source) => (
           <div
             key={source.id}
-            className="grid gap-3 p-4 md:grid-cols-[1fr_220px_auto] md:items-center"
+            className="grid gap-3 p-4 lg:grid-cols-[1fr_290px_auto] lg:items-center"
           >
             <div>
               <a
@@ -119,8 +133,17 @@ export function ScrapeControls({
               <p className="mt-1 break-all font-mono text-[11px] text-[#74808c]">
                 {source.url}
               </p>
+              <p className="mt-1 text-xs text-[#66717e]">
+                {source.connectorType} · {source.sourceType} · {source.jurisdiction}
+              </p>
             </div>
             <div className="text-xs text-[#66717e]">
+              <p>
+                Last checked:{" "}
+                <span className="font-mono text-[#344452]">
+                  {source.lastCheckedAt ?? "Never"}
+                </span>
+              </p>
               <p>
                 Last success:{" "}
                 <span className="font-mono text-[#344452]">
@@ -136,13 +159,18 @@ export function ScrapeControls({
                         ? "font-semibold text-[#8e3630]"
                         : source.latestStatus === "Partial"
                           ? "font-semibold text-[#a45f13]"
-                          : "font-semibold text-[#336350]"
+                          : source.latestStatus === "Success"
+                            ? "font-semibold text-[#336350]"
+                            : "font-semibold text-[#66717e]"
                     }
                   >
                     {source.latestStatus}
                   </span>
                 </p>
               )}
+              <p className="mt-1 font-mono text-[11px]">
+                {source.documentsFound} found · {source.signalsExtracted} signals
+              </p>
               {source.latestError && (
                 <p className="mt-1 line-clamp-2 text-[#8e3630]" title={source.latestError}>
                   {source.latestError}

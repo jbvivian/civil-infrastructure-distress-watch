@@ -6,7 +6,7 @@ import {
   completeScrapeRun,
   type ScrapePersistenceResult,
 } from "@/lib/repository";
-import { fetchHtmlSource } from "@/lib/scraper";
+import { fetchConfiguredSource } from "@/lib/scraper";
 
 function describeError(error: unknown): string {
   if (!(error instanceof Error)) return "The source could not be fetched.";
@@ -17,28 +17,27 @@ function describeError(error: unknown): string {
 }
 
 export async function runSourceScrape(
-  sourceId: string,
+  sourceIdOrName: string,
 ): Promise<ScrapePersistenceResult> {
-  const source = getMonitoredSource(sourceId);
-  if (!source) throw new Error(`Unknown configured source: ${sourceId}`);
-  if (!source.active) throw new Error(`Source ${sourceId} is inactive.`);
+  const source = getMonitoredSource(sourceIdOrName);
+  if (!source) throw new Error(`Unknown configured source: ${sourceIdOrName}`);
+  if (!source.active || !source.scrapeEnabled) {
+    throw new Error(`Source ${source.id} is not enabled for scraping.`);
+  }
 
   const startedAt = new Date().toISOString();
   try {
-    const page = await fetchHtmlSource(source.url);
+    const result = await fetchConfiguredSource(source);
     return completeScrapeRun({
       sourceId: source.id,
       startedAt,
       finishedAt: new Date().toISOString(),
-      status: page.status,
-      urlFetched: page.url,
-      statusCode: page.statusCode,
-      title: page.title,
-      fetchedAt: page.fetchedAt,
-      rawText: page.rawText,
-      text: page.text,
-      contentHash: page.contentHash,
-      errorMessage: page.errorMessage,
+      status: result.status,
+      url: result.url,
+      httpStatus: result.httpStatus,
+      documents: result.documents,
+      errorMessage: result.errorMessage,
+      logLines: result.logLines,
     });
   } catch (error) {
     const errorMessage = describeError(error);
@@ -47,15 +46,19 @@ export async function runSourceScrape(
       startedAt,
       finishedAt: new Date().toISOString(),
       status: "Failed",
-      urlFetched: source.url,
+      url: source.url,
+      documents: [],
       errorMessage,
+      logLines: [`Source fetch failed: ${errorMessage}`],
     });
   }
 }
 
 export async function runAllSourceScrapes(): Promise<ScrapePersistenceResult[]> {
   const results: ScrapePersistenceResult[] = [];
-  for (const source of monitoredSources.filter((item) => item.active)) {
+  for (const source of monitoredSources.filter(
+    (item) => item.active && item.scrapeEnabled,
+  )) {
     results.push(await runSourceScrape(source.id));
   }
   return results;

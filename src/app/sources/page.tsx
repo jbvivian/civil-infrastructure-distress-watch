@@ -22,7 +22,6 @@ export default async function SourcesPage() {
       documentCount: documents.length,
       signalCount: signals.length,
       latestRun: runs[0],
-      lastSuccessful: runs.find((run) => run.status === "Success"),
     };
   });
   const liveDocuments = dataset.documents
@@ -34,7 +33,7 @@ export default async function SourcesPage() {
       <PageHeading
         eyebrow="Monitoring ledger"
         title="Public sources"
-        description="A transparent inventory of fictional prototype channels and configured live public pages. Connector health and imported HTML documents are shown without hiding failed attempts."
+        description="A transparent inventory of seed, manual, HTML, index-page, and PDF sources. Connector health, imported documents, duplicate handling, and failures remain visible."
       />
       <div className="panel overflow-hidden">
         <div className="table-scroll">
@@ -43,6 +42,7 @@ export default async function SourcesPage() {
               <tr>
                 <th>Source</th>
                 <th>Type</th>
+                <th>Connector</th>
                 <th>Municipality / body</th>
                 <th>Last checked</th>
                 <th>Connector status</th>
@@ -73,33 +73,42 @@ export default async function SourcesPage() {
                       {source.type}
                     </span>
                   </td>
+                  <td className="text-xs text-[#53606d]">
+                    {source.connectorType ?? "Manual"}
+                  </td>
                   <td className="text-[#53606d]">{source.body}</td>
                   <td className="font-mono text-xs text-[#66717e]">
-                    {source.lastChecked ? formatDate(source.lastChecked) : "Never"}
+                    {source.lastCheckedAt
+                      ? formatDateTime(source.lastCheckedAt)
+                      : source.lastChecked
+                        ? formatDate(source.lastChecked)
+                        : "Never"}
                   </td>
                   <td className="text-xs">
-                    {source.connector ? (
+                    {source.scrapeEnabled ? (
                       <>
                         <span
                           className={
-                            source.latestRun?.status === "Failed"
+                            source.scrapeStatus === "Failed"
                               ? "font-semibold text-[#8e3630]"
-                              : source.latestRun?.status === "Partial"
+                              : source.scrapeStatus === "Partial"
                                 ? "font-semibold text-[#a45f13]"
-                                : "font-semibold text-[#336350]"
+                                : source.scrapeStatus === "Success"
+                                  ? "font-semibold text-[#336350]"
+                                  : "font-semibold text-[#66717e]"
                           }
                         >
-                          {source.latestRun?.status ?? "Not run"}
+                          {source.scrapeStatus ?? source.latestRun?.status ?? "Not checked"}
                         </span>
                         <p className="mt-1 text-[#66717e]">
                           Last success:{" "}
-                          {source.lastSuccessful
-                            ? formatDateTime(source.lastSuccessful.finishedAt)
+                          {source.lastSuccessfulScrapeAt
+                            ? formatDateTime(source.lastSuccessfulScrapeAt)
                             : "Never"}
                         </p>
-                        {source.latestRun?.errorMessage && (
+                        {(source.lastErrorMessage || source.latestRun?.errorMessage) && (
                           <p className="mt-1 max-w-xs text-[#8e3630]">
-                            {source.latestRun.errorMessage}
+                            {source.lastErrorMessage ?? source.latestRun?.errorMessage}
                           </p>
                         )}
                       </>
@@ -162,7 +171,7 @@ export default async function SourcesPage() {
                           {document.title} <ExternalLink className="size-3.5" />
                         </a>
                         <p className="mt-1 max-w-xl line-clamp-2 text-xs leading-5 text-[#66717e]">
-                          {document.text}
+                          {document.extractedText ?? document.text}
                         </p>
                       </td>
                       <td className="text-[#53606d]">
@@ -179,14 +188,18 @@ export default async function SourcesPage() {
                               : "font-semibold text-[#336350]"
                           }
                         >
-                          {document.scrapeStatus ?? "Success"}
+                          {document.extractionStatus ?? document.scrapeStatus ?? "Success"}
                         </span>
                         <p className="mt-1 font-mono text-xs text-[#74808c]">
                           HTTP {document.statusCode ?? "—"}
                         </p>
+                        <p className="mt-1 text-xs text-[#74808c]">
+                          {document.documentType ?? "HTML page"} ·{" "}
+                          {document.contentType ?? "unknown"}
+                        </p>
                       </td>
                       <td className="whitespace-nowrap font-mono text-xs text-[#53606d]">
-                        {document.text.length.toLocaleString()} chars
+                        {(document.extractedText ?? document.text).length.toLocaleString()} chars
                       </td>
                       <td className="text-xs text-[#66717e]">
                         {project?.name ?? "Unassigned"}

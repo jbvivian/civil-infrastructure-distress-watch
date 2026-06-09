@@ -20,12 +20,18 @@ export const distressCategories = [
 export const severityLevels = ["Low", "Medium", "High"] as const;
 export const confidenceLevels = ["Low", "Medium", "High"] as const;
 export const scrapeStatuses = ["Success", "Failed", "Partial"] as const;
+export const sourceScrapeStatuses = ["Not checked", ...scrapeStatuses] as const;
+export const connectorTypes = ["HTML", "PDF", "IndexPage", "Manual", "Mock"] as const;
+export const dataOrigins = ["Seed", "Manual", "Scraped"] as const;
 
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type DistressCategory = (typeof distressCategories)[number];
 export type Severity = (typeof severityLevels)[number];
 export type Confidence = (typeof confidenceLevels)[number];
 export type ScrapeStatus = (typeof scrapeStatuses)[number];
+export type SourceScrapeStatus = (typeof sourceScrapeStatuses)[number];
+export type ConnectorType = (typeof connectorTypes)[number];
+export type DataOrigin = (typeof dataOrigins)[number];
 
 export type SourceType =
   | "Town board agenda"
@@ -78,6 +84,11 @@ export interface Signal {
   severity: Severity;
   confidence: Confidence;
   reviewStatus?: "Assigned" | "Unassigned";
+  dataOrigin?: DataOrigin;
+  sourceDocumentId?: string;
+  assignmentStatus?: "Assigned" | "Unassigned" | "Needs Review";
+  detectedProjectName?: string;
+  extractedBy?: "RuleBased" | "Manual" | "Seed";
 }
 
 export interface Source {
@@ -90,7 +101,18 @@ export interface Source {
   lastChecked: string;
   fictional: boolean;
   active?: boolean;
-  connector?: "html";
+  connector?: "html" | "pdf" | "index";
+  sourceType?: SourceType;
+  jurisdiction?: string;
+  county?: string;
+  scrapeEnabled?: boolean;
+  lastCheckedAt?: string;
+  lastSuccessfulScrapeAt?: string;
+  scrapeStatus?: SourceScrapeStatus;
+  lastErrorMessage?: string;
+  documentsFound?: number;
+  signalsExtracted?: number;
+  connectorType?: ConnectorType;
 }
 
 export interface SourceDocument {
@@ -109,6 +131,11 @@ export interface SourceDocument {
   rawText?: string;
   scrapeStatus?: ScrapeStatus;
   errorMessage?: string;
+  documentType?: "HTML page" | "PDF";
+  contentType?: string;
+  extractedText?: string;
+  extractionStatus?: ScrapeStatus;
+  dataOrigin?: DataOrigin;
 }
 
 export interface ScrapeRun {
@@ -121,6 +148,11 @@ export interface ScrapeRun {
   signalsExtracted: number;
   errorMessage?: string;
   urlFetched: string;
+  url?: string;
+  httpStatus?: number;
+  documentsImported?: number;
+  duplicateDocumentsSkipped?: number;
+  logLines?: string[];
 }
 
 export interface ProjectEvent {

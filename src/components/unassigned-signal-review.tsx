@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LoaderCircle } from "lucide-react";
 import { CategoryBadge, SeverityBadge } from "@/components/badges";
 import type {
+  Confidence,
   DistressCategory,
   Project,
   Severity,
@@ -15,8 +16,11 @@ interface UnassignedSignal {
   title: string;
   category: DistressCategory;
   severity: Severity;
+  confidence: Confidence;
   evidenceExcerpt: string;
   sourceTitle: string;
+  assignmentStatus: "Assigned" | "Unassigned" | "Needs Review";
+  detectedProjectName?: string;
 }
 
 export function UnassignedSignalReview({
@@ -78,6 +82,13 @@ export function UnassignedSignalReview({
                 </div>
                 <h3 className="mt-2 font-semibold text-[#2a4053]">{signal.title}</h3>
                 <p className="mt-1 text-xs text-[#74808c]">{signal.sourceTitle}</p>
+                <p className="mt-1 text-xs font-semibold text-[#a45f13]">
+                  {signal.assignmentStatus}
+                  {signal.detectedProjectName
+                    ? ` · Possible match: ${signal.detectedProjectName}`
+                    : ""}
+                  {` · ${signal.confidence} extraction confidence`}
+                </p>
                 <blockquote className="evidence-quote mt-3">
                   {signal.evidenceExcerpt}
                 </blockquote>

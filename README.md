@@ -18,7 +18,7 @@ and must not be used for real-world decisions.
   source documents, evidence, interpretations, consequences, actions, and alternatives
 - Searchable signal ledger
 - Monitored source inventory with live connector health and imported document previews
-- Configured HTML source connectors with scrape runs, content hashing, and graceful failures
+- Configured HTML, index-page, and PDF connectors with scrape runs, content hashing, and graceful failures
 - Manual ingest workflow with deterministic rule-based extraction and review-before-save
 - Unassigned live-signal review and project assignment
 - Deterministic weekly brief with Markdown export
@@ -33,6 +33,7 @@ and must not be used for real-world decisions.
 - React 19 and strict TypeScript
 - Tailwind CSS 4
 - Cheerio HTML parsing
+- `pdf-parse` PDF text extraction
 - File-backed local JSON persistence
 - Vitest
 
@@ -64,18 +65,30 @@ Run one source by its configured ID:
 npm run scrape:source -- live-orange-county-legislature
 ```
 
+List configured source IDs and connector types:
+
+```bash
+npm run source:list
+```
+
 In the app, open [http://localhost:3000/admin/ingest](http://localhost:3000/admin/ingest)
 and use **Run scrape** beside a source or **Run all active sources**.
 
-Each connector fetches only its configured URL. It does not crawl linked pages. The HTML
-connector records the final URL, page title, HTTP status, fetch time, raw HTML, readable
-text, and a SHA-256 content hash. A repeated hash records a successful scrape run but does
-not create another document or another set of signals.
+Each connector fetches only its configured URL. An `IndexPage` connector may additionally
+fetch at most two direct PDF/document links present on that page. It never follows HTML
+pages recursively. Requests use a descriptive user agent, a 20-second timeout, a short
+pause between linked documents, and a 20 MB PDF limit.
+
+Documents record the final URL, title, HTTP status, content type, fetch time, document
+type, extracted text, extraction status, and a SHA-256 hash of normalized text plus URL.
+A repeated hash records a scrape run and duplicate count but does not create another
+document or another set of signals.
 
 Successful and partial documents are passed to the existing deterministic extractor.
-Signals are assigned automatically only when the full tracked project name appears in the
-page. Otherwise they enter the unassigned review queue on the ingest page, where an
-administrator can assign them to an existing project.
+Signals are assigned automatically only when the full tracked project name appears.
+Weaker municipality, project-type, and name-word matches are marked **Needs Review** with
+a suggested project but remain unassigned. Other matches enter the unassigned review
+queue. An administrator can assign either kind to an existing project.
 
 Failures and pages with insufficient or error-page text are recorded as `Failed` or
 `Partial` scrape runs. They remain visible in the admin logs and Sources page without
@@ -87,27 +100,40 @@ The source registry is in `src/config/monitored-sources.ts`.
 
 | Source ID | Public page |
 | --- | --- |
+| `live-orange-county-public-works` | Orange County Department of Public Works |
 | `live-orange-county-legislature` | Orange County Legislature |
-| `live-dutchess-county-legislature` | Dutchess County Legislature |
-| `live-ulster-transportation-council` | Ulster County Transportation Council agendas |
-| `live-town-newburgh-meetings` | Town of Newburgh meeting schedules |
-| `live-poughkeepsie-planning-board` | Town of Poughkeepsie Planning Board |
-| `live-nysdot-business` | NYSDOT contracting opportunities |
+| `live-dutchess-county-public-works` | Dutchess County Department of Public Works |
+| `live-dutchess-capital-plan` | Dutchess County Capital Plan 2026-2030 PDF |
+| `live-ulster-public-works-committee` | Ulster County Public Works and Capital Projects Committee |
+| `live-ulster-active-bids` | Ulster County active commodity bids |
+| `live-ulster-capital-plan` | Ulster County Capital Improvement Program 2026-2031 PDF |
+| `live-nysdot-construction-results` | NYSDOT construction opportunities and results |
 | `live-nys-comptroller-audits` | NYS Comptroller local government audits |
+| `live-poughkeepsie-planning-board` | Town of Poughkeepsie Planning Board |
 
 ### Live test results
 
-Tested June 8, 2026:
+Tested June 9, 2026:
 
-- All seven configured URLs returned usable HTML and imported one document each.
-- The Town of Newburgh page produced one unassigned deterministic `litigation` signal.
-- A second complete run imported zero documents, confirming content-hash deduplication.
-- The initially indexed Dutchess URL returned a soft 404 with HTTP 200 and was replaced
-  with the current department URL.
-- The former Town of Poughkeepsie hostname failed TLS validation and redirected to the
-  current `townofpoughkeepsie-ny.gov` hostname; the configured URL now uses the valid host.
-- No configured source failed in the final test. Future HTTP, TLS, timeout, content-type,
-  and low-text failures are stored in scrape logs rather than thrown through the app.
+| Source | Result | Documents exposed | New rule matches in clean connector pass |
+| --- | --- | ---: | ---: |
+| Orange County Public Works | Success | HTML + 1 linked PDF | 0 |
+| Orange County Legislature | Success | 1 HTML page | 0 |
+| Dutchess County Public Works | Success | HTML + 2 linked PDFs | 2 |
+| Dutchess County Capital Plan | Success | 1 direct PDF | 1 |
+| Ulster Public Works Committee | Success | HTML + 2 linked PDFs | 1 |
+| Ulster active commodity bids | Partial | JavaScript shell, no readable server text | 0 |
+| Ulster Capital Improvement Program | Success | 1 direct PDF | 3 |
+| NYSDOT construction results | Success | 1 HTML page | 0 |
+| NYS Comptroller audits | Success | 1 HTML page | 0 |
+| Poughkeepsie Planning Board | Success | HTML + 2 linked agenda PDFs | 2 |
+
+The initial PDF test exposed a parser buffer-transfer issue; parsing metadata and text
+sequentially fixed it. The final full run completed with nine successes, one partial, and
+no failed sources. An immediate repeat run imported zero documents and zero signals,
+recording every fetched document as a duplicate.
+
+See `docs/live-sources.md` for connector details and current limitations.
 
 ## Reset seed data
 
@@ -144,7 +170,7 @@ OPENAI_API_KEY=
 - `src/lib/types.ts` — domain entities and shared enums
 - `src/lib/repository.ts` — seed fallback, JSON migration, scrape runs, deduplication, and assignment
 - `src/lib/extractor.ts` — deterministic phrase rules, implication copy, and status scoring
-- `src/lib/scraper.ts` — bounded HTML fetch, readable-text parsing, and content hashing
+- `src/lib/scraper.ts` — bounded HTML/PDF fetch, linked-document parsing, and content hashing
 - `src/lib/scrape-service.ts` — one-source/all-source orchestration and failure isolation
 - `src/app/` — server-rendered App Router pages and local API route handlers
 - `src/components/` — restrained UI primitives and client-side filtering/ingest workflows
@@ -181,10 +207,12 @@ The label “Confirmed Issue” confirms the cited issue, not overall project fa
 - Seed records and URLs are fictional.
 - Matching is phrase-based and does not resolve negation, document structure, or entities.
 - File persistence is intended for one local user and is not concurrency-safe.
-- Live project matching requires the full tracked project name; most live matches will be
-  unassigned and require review.
-- The connector supports HTML only. It does not parse linked PDFs, JavaScript-rendered
-  content, feeds, APIs, or scanned documents.
+- Live project matching requires an exact full name for automatic assignment. Suggested
+  fuzzy matches remain unassigned and require review.
+- PDF extraction works for text-based PDFs only. Scanned/image-only PDFs need OCR.
+- JavaScript-rendered listings may yield partial runs with little or no server HTML.
+- Index connectors inspect only the configured page and at most two direct document links.
+- Published dates depend on page/PDF metadata and otherwise fall back to fetch date.
 - No authentication, scheduled collection, OCR, broad crawling, or notification delivery.
 - Source layout changes, bot protection, TLS errors, redirects, and transient outages may
   produce partial or failed runs.
@@ -194,7 +222,7 @@ The label “Confirmed Issue” confirms the cited issue, not overall project fa
 
 1. Replace JSON persistence with Postgres and migrations.
 2. Add authenticated organizations, review assignments, and audit history.
-3. Add PDF/OCR connectors, retry policy, and optional scheduled runs.
+3. Add OCR, JavaScript-rendered source adapters, retry policy, and optional scheduled runs.
 4. Add entity resolution for owners, vendors, funding programs, and project aliases.
 5. Add a source-cited LLM interpretation layer behind human review and deterministic fallback.
 6. Add notification preferences, saved filters, and weekly email delivery.

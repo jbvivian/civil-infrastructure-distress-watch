@@ -11,21 +11,26 @@ export const dynamic = "force-dynamic";
 export default async function IngestPage() {
   const dataset = await getDataset();
   const liveSources = dataset.sources
-    .filter((source) => source.connector === "html")
+    .filter((source) => source.scrapeEnabled)
     .map((source) => {
-      const runs = dataset.scrapeRuns.filter((run) => run.sourceId === source.id);
-      const latest = runs[0];
-      const lastSuccessful = runs.find((run) => run.status === "Success");
       return {
         id: source.id,
         name: source.name,
         url: source.url,
         active: source.active ?? false,
-        lastSuccessfulAt: lastSuccessful
-          ? formatDateTime(lastSuccessful.finishedAt)
+        sourceType: source.type,
+        jurisdiction: source.jurisdiction ?? source.body,
+        connectorType: source.connectorType ?? "HTML",
+        lastCheckedAt: source.lastCheckedAt
+          ? formatDateTime(source.lastCheckedAt)
           : undefined,
-        latestStatus: latest?.status,
-        latestError: latest?.errorMessage,
+        lastSuccessfulAt: source.lastSuccessfulScrapeAt
+          ? formatDateTime(source.lastSuccessfulScrapeAt)
+          : undefined,
+        latestStatus: source.scrapeStatus,
+        latestError: source.lastErrorMessage,
+        documentsFound: source.documentsFound ?? 0,
+        signalsExtracted: source.signalsExtracted ?? 0,
       };
     });
   const documentMap = new Map(dataset.documents.map((document) => [document.id, document]));
@@ -36,7 +41,10 @@ export default async function IngestPage() {
       title: signal.title,
       category: signal.category,
       severity: signal.severity,
+      confidence: signal.confidence,
       evidenceExcerpt: signal.evidenceExcerpt,
+      assignmentStatus: signal.assignmentStatus ?? "Unassigned",
+      detectedProjectName: signal.detectedProjectName,
       sourceTitle:
         documentMap.get(signal.sourceDocumentIds[0])?.title ?? "Live source document",
     }));
@@ -46,7 +54,7 @@ export default async function IngestPage() {
       <PageHeading
         eyebrow="Local administration"
         title="Ingest and monitor public sources"
-        description="Run configured HTML connectors, review their extraction matches, or paste a document manually. Every scrape attempt is recorded and source failures remain isolated."
+        description="Run configured HTML, index-page, and PDF connectors, review their extraction matches, or paste a document manually. Every scrape attempt is recorded and source failures remain isolated."
       />
       <ScrapeControls sources={liveSources} />
       <UnassignedSignalReview signals={unassignedSignals} projects={dataset.projects} />
@@ -67,6 +75,8 @@ export default async function IngestPage() {
                   <th>Source</th>
                   <th>Status</th>
                   <th>Documents</th>
+                  <th>Imported</th>
+                  <th>Duplicates</th>
                   <th>Signals</th>
                   <th>Error</th>
                 </tr>
@@ -103,9 +113,19 @@ export default async function IngestPage() {
                         </span>
                       </td>
                       <td className="font-mono">{run.documentsFound}</td>
+                      <td className="font-mono">{run.documentsImported ?? 0}</td>
+                      <td className="font-mono">
+                        {run.duplicateDocumentsSkipped ?? 0}
+                      </td>
                       <td className="font-mono">{run.signalsExtracted}</td>
-                      <td className="max-w-md text-xs leading-5 text-[#8e3630]">
-                        {run.errorMessage ?? "—"}
+                      <td className="max-w-md text-xs leading-5">
+                        {run.errorMessage ? (
+                          <p className="text-[#8e3630]">{run.errorMessage}</p>
+                        ) : (
+                          <p className="text-[#66717e]">
+                            {run.logLines?.slice(-1)[0] ?? "—"}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   );
