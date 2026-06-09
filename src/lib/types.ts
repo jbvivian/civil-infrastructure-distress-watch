@@ -23,6 +23,25 @@ export const scrapeStatuses = ["Success", "Failed", "Partial"] as const;
 export const sourceScrapeStatuses = ["Not checked", ...scrapeStatuses] as const;
 export const connectorTypes = ["HTML", "PDF", "IndexPage", "Manual", "Mock"] as const;
 export const dataOrigins = ["Seed", "Manual", "Scraped"] as const;
+export const signalReviewStatuses = [
+  "Needs Review",
+  "Assigned",
+  "Promoted",
+  "Dismissed",
+] as const;
+export const civilFirmOpportunityTypes = [
+  "Potential redesign / additional engineering services",
+  "Construction management / inspection need",
+  "Procurement or rebid opportunity",
+  "Grant / funding support need",
+  "Permitting / regulatory support need",
+  "Claims / dispute support",
+  "Public communication / stakeholder management",
+  "Capital planning / asset management",
+  "Emergency repair / resilience work",
+  "Competitive intelligence only",
+  "Not commercially relevant",
+] as const;
 
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type DistressCategory = (typeof distressCategories)[number];
@@ -32,6 +51,19 @@ export type ScrapeStatus = (typeof scrapeStatuses)[number];
 export type SourceScrapeStatus = (typeof sourceScrapeStatuses)[number];
 export type ConnectorType = (typeof connectorTypes)[number];
 export type DataOrigin = (typeof dataOrigins)[number];
+export type SignalReviewStatus = (typeof signalReviewStatuses)[number];
+export type CivilFirmOpportunityType = (typeof civilFirmOpportunityTypes)[number];
+
+export interface ExtractedEntities {
+  possibleProjectNames: string[];
+  possibleOwners: string[];
+  possibleVendors: string[];
+  possibleFundingSources: string[];
+  possibleAmounts: string[];
+  possibleDates: string[];
+  possibleResolutionOrContractNumbers: string[];
+  possibleProjectTypes: string[];
+}
 
 export type SourceType =
   | "Town board agenda"
@@ -66,6 +98,8 @@ export interface Project {
   confidence: Confidence;
   lastUpdated: string;
   fictional: true;
+  statusReason?: string;
+  statusFactors?: string[];
 }
 
 export interface Signal {
@@ -83,12 +117,32 @@ export interface Signal {
   alternativeExplanation: string;
   severity: Severity;
   confidence: Confidence;
-  reviewStatus?: "Assigned" | "Unassigned";
+  reviewStatus?: SignalReviewStatus | "Unassigned";
   dataOrigin?: DataOrigin;
   sourceDocumentId?: string;
   assignmentStatus?: "Assigned" | "Unassigned" | "Needs Review";
   detectedProjectName?: string;
   extractedBy?: "RuleBased" | "Manual" | "Seed";
+  promotedToBrief?: boolean;
+  promotedAt?: string;
+  promotedBy?: string;
+  promotionNote?: string;
+  dismissed?: boolean;
+  dismissedAt?: string;
+  dismissedReason?: string;
+  dismissedBy?: string;
+  signalReviewStatus?: SignalReviewStatus;
+  suggestedProjectId?: string;
+  suggestedProjectConfidence?: Confidence;
+  suggestedProjectReason?: string;
+  extractedEntities?: ExtractedEntities;
+  matchedTerms?: string[];
+  severityReason?: string;
+  confidenceReason?: string;
+  scoringFactors?: string[];
+  civilFirmRelevance?: string;
+  civilFirmOpportunityType?: CivilFirmOpportunityType;
+  buyerPersona?: string;
 }
 
 export interface Source {
@@ -136,6 +190,7 @@ export interface SourceDocument {
   extractedText?: string;
   extractionStatus?: ScrapeStatus;
   dataOrigin?: DataOrigin;
+  extractedEntities?: ExtractedEntities;
 }
 
 export interface ScrapeRun {

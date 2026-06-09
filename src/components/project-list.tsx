@@ -8,8 +8,10 @@ import { EmptyState } from "@/components/empty-state";
 import { formatDate } from "@/lib/format";
 import type {
   Confidence,
+  DataOrigin,
   DistressCategory,
   ProjectStatus,
+  SignalReviewStatus,
 } from "@/lib/types";
 
 export interface ProjectListItem {
@@ -26,6 +28,11 @@ export interface ProjectListItem {
   fundingSources: string[];
   latestSignal: string;
   categories: DistressCategory[];
+  dataOrigins: DataOrigin[];
+  reviewStatuses: SignalReviewStatus[];
+  sourceTypes: string[];
+  jurisdictions: string[];
+  hasLiveSignals: boolean;
 }
 
 function unique(values: string[]): string[] {
@@ -41,6 +48,11 @@ export function ProjectList({ projects }: { projects: ProjectListItem[] }) {
   const [category, setCategory] = useState("");
   const [funding, setFunding] = useState("");
   const [phase, setPhase] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [reviewStatus, setReviewStatus] = useState("");
+  const [sourceType, setSourceType] = useState("");
+  const [jurisdiction, setJurisdiction] = useState("");
+  const [liveOnly, setLiveOnly] = useState(false);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.toLowerCase();
@@ -54,10 +66,31 @@ export function ProjectList({ projects }: { projects: ProjectListItem[] }) {
         (!status || project.status === status) &&
         (!category || project.categories.includes(category as DistressCategory)) &&
         (!funding || project.fundingSources.includes(funding)) &&
-        (!phase || project.phase === phase)
+        (!phase || project.phase === phase) &&
+        (!origin || project.dataOrigins.includes(origin as DataOrigin)) &&
+        (!reviewStatus ||
+          project.reviewStatuses.includes(reviewStatus as SignalReviewStatus)) &&
+        (!sourceType || project.sourceTypes.includes(sourceType)) &&
+        (!jurisdiction || project.jurisdictions.includes(jurisdiction)) &&
+        (!liveOnly || project.hasLiveSignals)
       );
     });
-  }, [projects, query, county, owner, type, status, category, funding, phase]);
+  }, [
+    projects,
+    query,
+    county,
+    owner,
+    type,
+    status,
+    category,
+    funding,
+    phase,
+    origin,
+    reviewStatus,
+    sourceType,
+    jurisdiction,
+    liveOnly,
+  ]);
 
   const filters = [
     { label: "County", value: county, setter: setCounty, options: unique(projects.map((p) => p.county)) },
@@ -98,6 +131,71 @@ export function ProjectList({ projects }: { projects: ProjectListItem[] }) {
               </select>
             </label>
           ))}
+          <label className="text-xs font-semibold text-[#53606d]">
+            Data origin
+            <select
+              className="field mt-1 font-normal"
+              value={origin}
+              onChange={(event) => setOrigin(event.target.value)}
+            >
+              <option value="">All</option>
+              <option>Scraped</option>
+              <option>Manual</option>
+              <option>Seed</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-[#53606d]">
+            Review status
+            <select
+              className="field mt-1 font-normal"
+              value={reviewStatus}
+              onChange={(event) => setReviewStatus(event.target.value)}
+            >
+              <option value="">All active statuses</option>
+              <option>Needs Review</option>
+              <option>Assigned</option>
+              <option>Promoted</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-[#53606d]">
+            Source type
+            <select
+              className="field mt-1 font-normal"
+              value={sourceType}
+              onChange={(event) => setSourceType(event.target.value)}
+            >
+              <option value="">All</option>
+              {unique(projects.flatMap((project) => project.sourceTypes)).map(
+                (option) => (
+                  <option key={option}>{option}</option>
+                ),
+              )}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-[#53606d]">
+            Source jurisdiction
+            <select
+              className="field mt-1 font-normal"
+              value={jurisdiction}
+              onChange={(event) => setJurisdiction(event.target.value)}
+            >
+              <option value="">All</option>
+              {unique(projects.flatMap((project) => project.jurisdictions)).map(
+                (option) => (
+                  <option key={option}>{option}</option>
+                ),
+              )}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 rounded-md border bg-white px-3 text-sm font-semibold text-[#53606d]">
+            <input
+              type="checkbox"
+              checked={liveOnly}
+              onChange={(event) => setLiveOnly(event.target.checked)}
+              className="size-4 accent-[#17324d]"
+            />
+            Live-source only
+          </label>
         </div>
       </section>
 
@@ -114,6 +212,11 @@ export function ProjectList({ projects }: { projects: ProjectListItem[] }) {
             setCategory("");
             setFunding("");
             setPhase("");
+            setOrigin("");
+            setReviewStatus("");
+            setSourceType("");
+            setJurisdiction("");
+            setLiveOnly(false);
           }}
         >
           Clear filters

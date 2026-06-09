@@ -35,7 +35,10 @@ export default async function IngestPage() {
     });
   const documentMap = new Map(dataset.documents.map((document) => [document.id, document]));
   const unassignedSignals = dataset.signals
-    .filter((signal) => !signal.projectId)
+    .filter(
+      (signal) =>
+        !signal.projectId && !signal.dismissed && signal.dataOrigin === "Scraped",
+    )
     .map((signal) => ({
       id: signal.id,
       title: signal.title,
@@ -45,6 +48,24 @@ export default async function IngestPage() {
       evidenceExcerpt: signal.evidenceExcerpt,
       assignmentStatus: signal.assignmentStatus ?? "Unassigned",
       detectedProjectName: signal.detectedProjectName,
+      suggestedProjectId: signal.suggestedProjectId,
+      suggestedProjectConfidence: signal.suggestedProjectConfidence,
+      suggestedProjectReason: signal.suggestedProjectReason,
+      promotedToBrief: signal.promotedToBrief ?? false,
+      civilFirmRelevance: signal.civilFirmRelevance ?? "",
+      civilFirmOpportunityType:
+        signal.civilFirmOpportunityType ?? "Competitive intelligence only",
+      extractedEntities: signal.extractedEntities ?? {
+        possibleProjectNames: [],
+        possibleOwners: [],
+        possibleVendors: [],
+        possibleFundingSources: [],
+        possibleAmounts: [],
+        possibleDates: [],
+        possibleResolutionOrContractNumbers: [],
+        possibleProjectTypes: [],
+      },
+      sourceDocumentId: signal.sourceDocumentIds[0],
       sourceTitle:
         documentMap.get(signal.sourceDocumentIds[0])?.title ?? "Live source document",
     }));

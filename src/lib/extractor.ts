@@ -5,6 +5,7 @@ import {
   type Signal,
   type Severity,
 } from "@/lib/types";
+import { buildSignalQuality, explainProjectStatus } from "@/lib/signal-quality";
 
 interface Rule {
   terms: string[];
@@ -221,7 +222,15 @@ export function extractSignals(text: string): ExtractedSignal[] {
         confidence: "High",
         evidenceExcerpt: excerptAround(text, term),
         matchedTerm: term,
+        matchedTerms: [term],
         ...categoryCopy[rule.category],
+        ...buildSignalQuality({
+          category: rule.category,
+          severity: rule.severity,
+          confidence: "High",
+          evidenceExcerpt: excerptAround(text, term),
+          matchedTerm: term,
+        }),
       });
     }
   }
@@ -229,22 +238,6 @@ export function extractSignals(text: string): ExtractedSignal[] {
   return [...found.values()];
 }
 
-const explicitIssueTerms =
-  /\b(overrun|substantial completion delayed|final completion delayed|notice of claim|litigation|rebid|reject all bids|audit finding|major rescope)\b/i;
-
 export function deriveProjectStatus(signals: Signal[]): ProjectStatus {
-  if (signals.some((signal) => explicitIssueTerms.test(`${signal.title} ${signal.evidenceExcerpt}`))) {
-    return "Confirmed Issue";
-  }
-
-  if (signals.some((signal) => signal.severity === "High")) return "Escalated";
-
-  const repeatedPressure = ["Cost Pressure", "Schedule Pressure", "Scope Instability"].some(
-    (category) => signals.filter((signal) => signal.category === category).length >= 2,
-  );
-  if (repeatedPressure) return "Escalated";
-  if (signals.some((signal) => signal.severity === "Medium") || signals.length > 1) {
-    return "Review";
-  }
-  return "Watch";
+  return explainProjectStatus(signals).status;
 }

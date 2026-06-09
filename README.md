@@ -16,12 +16,13 @@ and must not be used for real-world decisions.
 - Searchable/filterable project watchlist
 - Detailed project records with budget and schedule deltas, funding, vendors, events,
   source documents, evidence, interpretations, consequences, actions, and alternatives
-- Searchable signal ledger
+- Searchable signal ledger with origin, review, source, jurisdiction, and relevance filters
 - Monitored source inventory with live connector health and imported document previews
 - Configured HTML, index-page, and PDF connectors with scrape runs, content hashing, and graceful failures
 - Manual ingest workflow with deterministic rule-based extraction and review-before-save
-- Unassigned live-signal review and project assignment
-- Deterministic weekly brief with Markdown export
+- Unassigned live-signal review, conservative project suggestions, promotion, dismissal, and assignment
+- Source-document detail pages with entity summaries and highlighted trigger terms
+- Deterministic weekly brief with promoted items first and Markdown export
 - 18 fictional projects across Orange, Dutchess, Ulster, Sullivan, Putnam, Rockland, and
   Westchester counties
 - 36 source-backed fictional signals and 36 linked source documents
@@ -50,6 +51,12 @@ Open [http://localhost:3000](http://localhost:3000).
 
 The app starts from the bundled seed data. Saving an ingested document creates
 `data/local-data.json`, which is intentionally ignored by Git.
+
+Older local datasets are normalized when read. Missing review flags default from the
+existing assignment, missing scoring and civil-firm relevance are generated
+deterministically, and missing document entities and project status explanations are
+backfilled. The normalized data is persisted on the next write; no migration command is
+required.
 
 ## Run scraping
 
@@ -89,6 +96,26 @@ Signals are assigned automatically only when the full tracked project name appea
 Weaker municipality, project-type, and name-word matches are marked **Needs Review** with
 a suggested project but remain unassigned. Other matches enter the unassigned review
 queue. An administrator can assign either kind to an existing project.
+
+## Signal review workflow
+
+The Signals page and Admin review queue support four persistent states:
+
+- **Needs Review** — extracted but not assigned
+- **Assigned** — linked to a tracked project
+- **Promoted** — manually placed at the front of the weekly brief
+- **Dismissed** — hidden from default views and excluded from the brief, with a required reason
+
+Use **Live-source only** or **Data origin: Scraped** to remove fictional seed records
+from the working view. The Admin queue shows suggested-project reasoning and extracted
+entities, supports one-click assignment, and lets a reviewer edit the civil-firm
+relevance and opportunity type.
+
+Open a document from a signal or from the Sources page at
+`/sources/documents/[id]`. The page shows collection metadata, entity candidates, all
+signals including dismissed items, and source text with matched rule terms highlighted.
+
+See `docs/review-workflow.md` for the operating guide.
 
 Failures and pages with insufficient or error-page text are recorded as `Failed` or
 `Partial` scrape runs. They remain visible in the admin logs and Sources page without
@@ -170,6 +197,9 @@ OPENAI_API_KEY=
 - `src/lib/types.ts` — domain entities and shared enums
 - `src/lib/repository.ts` — seed fallback, JSON migration, scrape runs, deduplication, and assignment
 - `src/lib/extractor.ts` — deterministic phrase rules, implication copy, and status scoring
+- `src/lib/entities.ts` — conservative entity-candidate extraction
+- `src/lib/signal-quality.ts` — scoring and commercial-relevance explanations
+- `src/lib/review-workflow.ts` — filters, promotion, dismissal, and weekly prioritization
 - `src/lib/scraper.ts` — bounded HTML/PDF fetch, linked-document parsing, and content hashing
 - `src/lib/scrape-service.ts` — one-source/all-source orchestration and failure isolation
 - `src/app/` — server-rendered App Router pages and local API route handlers
@@ -205,7 +235,8 @@ The label “Confirmed Issue” confirms the cited issue, not overall project fa
 ## Known limitations
 
 - Seed records and URLs are fictional.
-- Matching is phrase-based and does not resolve negation, document structure, or entities.
+- Matching and entity extraction are regex/rule based and do not resolve negation,
+  entity identity, document sections, or ambiguous organization names.
 - File persistence is intended for one local user and is not concurrency-safe.
 - Live project matching requires an exact full name for automatic assignment. Suggested
   fuzzy matches remain unassigned and require review.
@@ -216,14 +247,29 @@ The label “Confirmed Issue” confirms the cited issue, not overall project fa
 - No authentication, scheduled collection, OCR, broad crawling, or notification delivery.
 - Source layout changes, bot protection, TLS errors, redirects, and transient outages may
   produce partial or failed runs.
-- Weekly prioritization uses severity and recency only.
+- Highlighting marks exact trigger terms; normalized or truncated excerpts may still be
+  shown separately instead of highlighted as a complete passage.
+- Review attribution uses the prototype value `Local reviewer`; there is no authentication
+  or multi-user audit log.
+
+## What to test first
+
+1. Run `npm run scrape:source -- live-dutchess-county-public-works`.
+2. Open `/admin/ingest`, inspect a live signal, edit its commercial relevance, and
+   assign a suggested project only if the evidence supports it.
+3. Promote one signal and dismiss another with a reason.
+4. On `/signals`, enable **Live-source only**, then filter to **Promoted** and
+   **Dismissed**.
+5. Open the source document and confirm matched terms are highlighted.
+6. Open `/weekly-brief` and export Markdown; promoted items should lead and dismissed
+   items should be absent.
 
 ## Recommended next steps
 
 1. Replace JSON persistence with Postgres and migrations.
 2. Add authenticated organizations, review assignments, and audit history.
 3. Add OCR, JavaScript-rendered source adapters, retry policy, and optional scheduled runs.
-4. Add entity resolution for owners, vendors, funding programs, and project aliases.
+4. Add entity resolution for owners, vendors, funding programs, counties, and project aliases.
 5. Add a source-cited LLM interpretation layer behind human review and deterministic fallback.
 6. Add notification preferences, saved filters, and weekly email delivery.
 7. Validate scoring and wording with civil engineering, construction, and municipal finance users.

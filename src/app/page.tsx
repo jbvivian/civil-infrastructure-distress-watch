@@ -28,7 +28,7 @@ export default async function HomePage() {
   const projectMap = new Map(dataset.projects.map((project) => [project.id, project]));
   const documentMap = new Map(dataset.documents.map((document) => [document.id, document]));
   const recentSignals = [...dataset.signals]
-    .filter((signal) => signal.projectId)
+    .filter((signal) => signal.projectId && !signal.dismissed)
     .sort((a, b) => b.dateObserved.localeCompare(a.dateObserved))
     .slice(0, 6);
   const reviewProjects = dataset.projects
@@ -36,7 +36,9 @@ export default async function HomePage() {
     .sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated))
     .slice(0, 6);
 
-  const categoryCounts = dataset.signals.reduce<Record<string, number>>((counts, signal) => {
+  const categoryCounts = dataset.signals
+    .filter((signal) => !signal.dismissed)
+    .reduce<Record<string, number>>((counts, signal) => {
     counts[signal.category] = (counts[signal.category] ?? 0) + 1;
     return counts;
   }, {});

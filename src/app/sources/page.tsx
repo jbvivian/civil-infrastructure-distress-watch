@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { PageHeading } from "@/components/page-heading";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -162,13 +163,20 @@ export default async function SourcesPage() {
                   return (
                     <tr key={document.id}>
                       <td>
+                        <Link
+                          href={`/sources/documents/${document.id}`}
+                          className="font-semibold text-[#29475f] hover:underline"
+                        >
+                          {document.title}
+                        </Link>
                         <a
                           href={document.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 font-semibold text-[#29475f] hover:underline"
+                          aria-label={`Open original public URL for ${document.title}`}
+                          className="ml-1 inline-flex text-[#45647f]"
                         >
-                          {document.title} <ExternalLink className="size-3.5" />
+                          <ExternalLink className="size-3.5" />
                         </a>
                         <p className="mt-1 max-w-xl line-clamp-2 text-xs leading-5 text-[#66717e]">
                           {document.extractedText ?? document.text}

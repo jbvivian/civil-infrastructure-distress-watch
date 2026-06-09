@@ -25,7 +25,7 @@ export default async function ProjectDetailPage({
   if (!project) notFound();
 
   const signals = dataset.signals
-    .filter((signal) => signal.projectId === project.id)
+    .filter((signal) => signal.projectId === project.id && !signal.dismissed)
     .sort((a, b) => b.dateObserved.localeCompare(a.dateObserved));
   const documents = dataset.documents.filter((document) => document.projectId === project.id);
   const documentMap = new Map(documents.map((document) => [document.id, document]));
@@ -90,6 +90,20 @@ export default async function ProjectDetailPage({
         </div>
       </section>
 
+      <section className="panel mt-6 border-[#c9d6df] bg-[#f0f5f8] p-5">
+        <p className="eyebrow">Why this project status was assigned</p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[#28465d]">
+          {project.statusReason}
+        </p>
+        {project.statusFactors && project.statusFactors.length > 0 && (
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-[#53606d]">
+            {project.statusFactors.map((factor) => (
+              <li key={factor}>{factor}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_0.75fr]">
         <div className="space-y-5">
           <div>
@@ -115,9 +129,22 @@ export default async function ProjectDetailPage({
                     <p className="eyebrow">Source evidence</p>
                     <blockquote className="evidence-quote mt-2">{signal.evidenceExcerpt}</blockquote>
                     {document && (
-                      <a href={document.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#45647f] hover:underline">
-                        {document.title} <ExternalLink className="size-3.5" />
-                      </a>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                        <Link
+                          href={`/sources/documents/${document.id}`}
+                          className="font-semibold text-[#45647f] hover:underline"
+                        >
+                          Inspect {document.title}
+                        </Link>
+                        <a
+                          href={document.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 font-semibold text-[#45647f] hover:underline"
+                        >
+                          Original URL <ExternalLink className="size-3.5" />
+                        </a>
+                      </div>
                     )}
                   </div>
                   <dl className="space-y-4 text-sm">
@@ -125,6 +152,22 @@ export default async function ProjectDetailPage({
                     <div><dt className="eyebrow">Possible consequence</dt><dd className="mt-1.5 leading-6 text-[#40505d]">{signal.possibleConsequence}</dd></div>
                     <div className="rounded-md border border-[#c9d6df] bg-[#f0f5f8] p-3"><dt className="eyebrow">Recommended review action</dt><dd className="mt-1.5 font-medium leading-6 text-[#28465d]">{signal.recommendedAction}</dd></div>
                     <div><dt className="eyebrow">Alternative explanation</dt><dd className="mt-1.5 leading-6 text-[#66717e]">{signal.alternativeExplanation}</dd></div>
+                    <div className="rounded-md border border-[#d7dfd6] bg-[#f5f8f4] p-3">
+                      <dt className="eyebrow">Why a civil engineering firm may care</dt>
+                      <dd className="mt-1.5 leading-6 text-[#344f43]">
+                        {signal.civilFirmRelevance}
+                      </dd>
+                      <dd className="mt-2 text-xs font-semibold text-[#456353]">
+                        {signal.civilFirmOpportunityType}
+                      </dd>
+                    </div>
+                    <details className="rounded-md border p-3">
+                      <summary className="cursor-pointer font-semibold text-[#35536b]">
+                        Severity and confidence rationale
+                      </summary>
+                      <p className="mt-2 leading-6 text-[#53606d]">{signal.severityReason}</p>
+                      <p className="mt-1 leading-6 text-[#53606d]">{signal.confidenceReason}</p>
+                    </details>
                   </dl>
                 </div>
               </article>
@@ -163,9 +206,9 @@ export default async function ProjectDetailPage({
             <ul className="mt-3 space-y-3">
               {documents.map((document) => (
                 <li key={document.id}>
-                  <a href={document.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[#355b78] hover:underline">
+                  <Link href={`/sources/documents/${document.id}`} className="text-sm font-semibold text-[#355b78] hover:underline">
                     {document.title}
-                  </a>
+                  </Link>
                   <p className="mt-1 font-mono text-[11px] text-[#74808c]">Published {formatDate(document.publishedAt)}</p>
                 </li>
               ))}

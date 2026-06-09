@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isDuplicateDocument, matchProject } from "@/lib/repository";
-import type { Project, SourceDocument } from "@/lib/types";
+import { seedDataset } from "@/data/seed";
+import {
+  isDuplicateDocument,
+  matchProject,
+  normalizeDataset,
+} from "@/lib/repository";
+import type { Dataset, Project, Signal, SourceDocument } from "@/lib/types";
 
 const project: Project = {
   id: "project-1",
@@ -68,5 +73,32 @@ describe("isDuplicateDocument", () => {
 
     expect(isDuplicateDocument(documents, "abc123")).toBe(true);
     expect(isDuplicateDocument(documents, "different")).toBe(false);
+  });
+});
+
+describe("normalizeDataset", () => {
+  it("adds review, scoring, entity, and project-status defaults to older JSON", () => {
+    const legacy = structuredClone(seedDataset) as Dataset;
+    const legacySignal = legacy.signals[0] as Signal;
+    delete legacySignal.promotedToBrief;
+    delete legacySignal.dismissed;
+    delete legacySignal.signalReviewStatus;
+    delete legacySignal.civilFirmRelevance;
+    delete legacySignal.severityReason;
+    delete legacySignal.extractedEntities;
+    delete legacy.documents[0].extractedEntities;
+    delete legacy.projects[0].statusReason;
+
+    const migrated = normalizeDataset(legacy);
+    const migratedSignal = migrated.signals[0];
+
+    expect(migratedSignal.promotedToBrief).toBe(false);
+    expect(migratedSignal.dismissed).toBe(false);
+    expect(migratedSignal.signalReviewStatus).toBe("Assigned");
+    expect(migratedSignal.civilFirmRelevance).toBeTruthy();
+    expect(migratedSignal.severityReason).toBeTruthy();
+    expect(migratedSignal.extractedEntities).toBeDefined();
+    expect(migrated.documents[0].extractedEntities).toBeDefined();
+    expect(migrated.projects[0].statusReason).toBeTruthy();
   });
 });

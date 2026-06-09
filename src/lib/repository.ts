@@ -3,13 +3,27 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { monitoredSources } from "@/config/monitored-sources";
 import { seedDataset } from "@/data/seed";
-import { deriveProjectStatus, extractSignals } from "@/lib/extractor";
+import { extractEntities } from "@/lib/entities";
+import { extractSignals } from "@/lib/extractor";
+import {
+  dismissSignal,
+  promoteSignal,
+} from "@/lib/review-workflow";
 import { cleanReadableText, type ScrapedDocument } from "@/lib/scraper";
+import {
+  buildSignalQuality,
+  explainProjectStatus,
+} from "@/lib/signal-quality";
 import type {
+  CivilFirmOpportunityType,
+  Confidence,
   Dataset,
+  DistressCategory,
   ExtractedSignal,
   Project,
   ScrapeStatus,
+  Severity,
+  Signal,
   SourceDocument,
   SourceType,
 } from "@/lib/types";
@@ -34,21 +48,9 @@ async function writeDataset(dataset: Dataset): Promise<void> {
   await fs.rename(temporaryPath, localDataPath);
 }
 
-function normalizeDataset(dataset: Dataset): Dataset {
+export function normalizeDataset(dataset: Dataset): Dataset {
   const configuredSourceIds = new Set(monitoredSources.map((source) => source.id));
   dataset.scrapeRuns ??= [];
-  dataset.signals = dataset.signals.map((signal) => ({
-    ...signal,
-    projectId: signal.projectId ?? null,
-    reviewStatus: signal.reviewStatus ?? (signal.projectId ? "Assigned" : "Unassigned"),
-    assignmentStatus:
-      signal.assignmentStatus ?? (signal.projectId ? "Assigned" : "Unassigned"),
-    dataOrigin: signal.dataOrigin ?? (signal.id.startsWith("signal-local-") ? "Manual" : "Seed"),
-    sourceDocumentId: signal.sourceDocumentId ?? signal.sourceDocumentIds[0],
-    extractedBy:
-      signal.extractedBy ??
-      (signal.id.startsWith("signal-local-") ? "Manual" : "Seed"),
-  }));
   dataset.documents = dataset.documents.map((document) => {
     const extractedText = cleanReadableText(document.extractedText ?? document.text);
     return {
@@ -66,6 +68,56 @@ function normalizeDataset(dataset: Dataset): Dataset {
             : "Manual"),
       documentType: document.documentType ?? "HTML page",
       contentType: document.contentType ?? "text/plain",
+      extractedEntities: document.extractedEntities ?? extractEntities(extractedText),
+    };
+  });
+  const documentMap = new Map(dataset.documents.map((document) => [document.id, document]));
+  dataset.signals = dataset.signals.map((signal) => {
+    const matchedTerm =
+      signal.matchedTerms?.[0] ||
+      (signal as Signal & { matchedTerm?: string }).matchedTerm ||
+      signal.signalType;
+    const quality = buildSignalQuality({ ...signal, matchedTerm });
+    const projectId = signal.projectId ?? null;
+    const dataOrigin =
+      signal.dataOrigin ?? (signal.id.startsWith("signal-local-") ? "Manual" : "Seed");
+    const sourceDocumentId = signal.sourceDocumentId ?? signal.sourceDocumentIds[0];
+    const document = documentMap.get(sourceDocumentId);
+    const dismissed = signal.dismissed ?? false;
+    const promotedToBrief = dismissed ? false : signal.promotedToBrief ?? false;
+    const signalReviewStatus = dismissed
+      ? "Dismissed"
+      : promotedToBrief
+        ? "Promoted"
+        : projectId
+          ? "Assigned"
+          : "Needs Review";
+    return {
+      ...signal,
+      projectId,
+      reviewStatus: signalReviewStatus,
+      assignmentStatus:
+        signal.assignmentStatus ?? (projectId ? "Assigned" : "Needs Review"),
+      dataOrigin,
+      sourceDocumentId,
+      extractedBy:
+        signal.extractedBy ??
+        (dataOrigin === "Seed" ? "Seed" : dataOrigin === "Manual" ? "Manual" : "RuleBased"),
+      promotedToBrief,
+      dismissed,
+      signalReviewStatus,
+      matchedTerms: signal.matchedTerms ?? [matchedTerm],
+      extractedEntities:
+        signal.extractedEntities ??
+        document?.extractedEntities ??
+        extractEntities(signal.evidenceExcerpt),
+      severityReason: signal.severityReason ?? quality.severityReason,
+      confidenceReason: signal.confidenceReason ?? quality.confidenceReason,
+      scoringFactors: signal.scoringFactors ?? quality.scoringFactors,
+      civilFirmRelevance: signal.civilFirmRelevance ?? quality.civilFirmRelevance,
+      civilFirmOpportunityType:
+        signal.civilFirmOpportunityType ?? quality.civilFirmOpportunityType,
+      buyerPersona: signal.buyerPersona ?? quality.buyerPersona,
     };
   });
   dataset.scrapeRuns = dataset.scrapeRuns.map((run) => ({
@@ -134,6 +186,14 @@ function normalizeDataset(dataset: Dataset): Dataset {
       signal.sourceDocumentIds.some((documentId) => documentIds.has(documentId)),
     ).length;
   }
+  for (const project of dataset.projects) {
+    const explanation = explainProjectStatus(
+      dataset.signals.filter((signal) => signal.projectId === project.id),
+    );
+    project.status = explanation.status;
+    project.statusReason = explanation.reason;
+    project.statusFactors = explanation.factors;
+  }
 
   return dataset;
 }
@@ -193,6 +253,7 @@ export async function ingestDocument(input: IngestInput): Promise<number> {
     extractedText: input.text,
     extractionStatus: "Success",
     dataOrigin: "Manual",
+    extractedEntities: extractEntities(input.text),
   });
 
   const newSignals = input.signals.map((signal, index) => ({
@@ -206,11 +267,18 @@ export async function ingestDocument(input: IngestInput): Promise<number> {
     dataOrigin: "Manual" as const,
     sourceDocumentId: documentId,
     extractedBy: "Manual" as const,
+    promotedToBrief: false,
+    dismissed: false,
+    signalReviewStatus: "Assigned" as const,
+    extractedEntities: extractEntities(input.text),
   }));
   dataset.signals.push(...newSignals);
 
   const projectSignals = dataset.signals.filter((signal) => signal.projectId === project.id);
-  project.status = deriveProjectStatus(projectSignals);
+  const explanation = explainProjectStatus(projectSignals);
+  project.status = explanation.status;
+  project.statusReason = explanation.reason;
+  project.statusFactors = explanation.factors;
   project.lastUpdated = observedAt;
   project.confidence = newSignals.some((signal) => signal.confidence === "High")
     ? "High"
@@ -272,6 +340,8 @@ function projectWords(project: Project): string[] {
 export interface ProjectMatch {
   project?: Project;
   detectedProjectName?: string;
+  suggestedProjectId?: string;
+  reason?: string;
   confidence: "High" | "Medium" | "Low";
 }
 
@@ -291,7 +361,15 @@ export function matchProject(
   const exact = projects.find((project) =>
     haystack.includes(project.name.toLowerCase()),
   );
-  if (exact) return { project: exact, detectedProjectName: exact.name, confidence: "High" };
+  if (exact) {
+    return {
+      project: exact,
+      detectedProjectName: exact.name,
+      suggestedProjectId: exact.id,
+      reason: "The complete tracked project name appears in the source.",
+      confidence: "High",
+    };
+  }
 
   const candidates = projects
     .map((project) => {
@@ -322,6 +400,8 @@ export function matchProject(
   if (!best || best.score === candidates[1]?.score) return { confidence: "Low" };
   return {
     detectedProjectName: best.project.name,
+    suggestedProjectId: best.project.id,
+    reason: `Suggested because the source references ${best.project.municipality}, ${best.matchedWords} distinctive project-name term${best.matchedWords === 1 ? "" : "s"}, and compatible project-type language.`,
     confidence: "Medium",
   };
 }
@@ -353,6 +433,7 @@ export async function completeScrapeRun(
 
     if (scraped.text || scraped.status !== "Failed") {
       const match = matchProject(dataset.projects, scraped.title, scraped.text);
+      const extractedEntities = extractEntities(scraped.text);
       const documentId = `document-live-${randomUUID()}`;
       const observedAt = scraped.fetchedAt.slice(0, 10);
       dataset.documents.push({
@@ -375,6 +456,7 @@ export async function completeScrapeRun(
         extractedText: scraped.text,
         extractionStatus: scraped.status,
         dataOrigin: "Scraped",
+        extractedEntities,
         fictional: false,
       });
 
@@ -385,16 +467,27 @@ export async function completeScrapeRun(
         projectId: match.project?.id ?? null,
         sourceDocumentIds: [documentId],
         dateObserved: observedAt,
-        reviewStatus: match.project ? ("Assigned" as const) : ("Unassigned" as const),
+        reviewStatus: match.project
+          ? ("Assigned" as const)
+          : ("Needs Review" as const),
         assignmentStatus: match.project
           ? ("Assigned" as const)
           : match.detectedProjectName
             ? ("Needs Review" as const)
             : ("Unassigned" as const),
         detectedProjectName: match.detectedProjectName,
+        suggestedProjectId: match.project ? undefined : match.suggestedProjectId,
+        suggestedProjectConfidence: match.project ? undefined : match.confidence,
+        suggestedProjectReason: match.project ? undefined : match.reason,
         dataOrigin: "Scraped" as const,
         sourceDocumentId: documentId,
         extractedBy: "RuleBased" as const,
+        promotedToBrief: false,
+        dismissed: false,
+        signalReviewStatus: match.project
+          ? ("Assigned" as const)
+          : ("Needs Review" as const),
+        extractedEntities,
       }));
       dataset.signals.push(...newSignals);
       signalsExtracted += newSignals.length;
@@ -407,7 +500,10 @@ export async function completeScrapeRun(
         const projectSignals = dataset.signals.filter(
           (signal) => signal.projectId === match.project?.id,
         );
-        match.project.status = deriveProjectStatus(projectSignals);
+        const explanation = explainProjectStatus(projectSignals);
+        match.project.status = explanation.status;
+        match.project.statusReason = explanation.reason;
+        match.project.statusFactors = explanation.factors;
         match.project.lastUpdated = observedAt;
       }
     }
@@ -466,6 +562,7 @@ export async function assignSignalToProject(
   signal.projectId = project.id;
   signal.reviewStatus = "Assigned";
   signal.assignmentStatus = "Assigned";
+  signal.signalReviewStatus = signal.promotedToBrief ? "Promoted" : "Assigned";
   signal.detectedProjectName = project.name;
   for (const documentId of signal.sourceDocumentIds) {
     const document = dataset.documents.find((item) => item.id === documentId);
@@ -473,7 +570,10 @@ export async function assignSignalToProject(
   }
 
   const projectSignals = dataset.signals.filter((item) => item.projectId === project.id);
-  project.status = deriveProjectStatus(projectSignals);
+  const explanation = explainProjectStatus(projectSignals);
+  project.status = explanation.status;
+  project.statusReason = explanation.reason;
+  project.statusFactors = explanation.factors;
   project.lastUpdated = observedAt;
   project.confidence =
     signal.confidence === "High" ? "High" : project.confidence;
@@ -486,5 +586,87 @@ export async function assignSignalToProject(
     type: "Signal",
   });
 
+  await writeDataset(dataset);
+}
+
+export async function setSignalPromotion(
+  signalId: string,
+  promoted: boolean,
+  note?: string,
+): Promise<void> {
+  const dataset = await getDataset();
+  const index = dataset.signals.findIndex((signal) => signal.id === signalId);
+  if (index < 0) throw new Error("Signal was not found.");
+  dataset.signals[index] = promoteSignal(dataset.signals[index], promoted, note);
+  await writeDataset(dataset);
+}
+
+export async function dismissSignalWithReason(
+  signalId: string,
+  reason: string,
+): Promise<void> {
+  const dataset = await getDataset();
+  const index = dataset.signals.findIndex((signal) => signal.id === signalId);
+  if (index < 0) throw new Error("Signal was not found.");
+  dataset.signals[index] = dismissSignal(dataset.signals[index], reason);
+  const projectId = dataset.signals[index].projectId;
+  if (projectId) {
+    const project = dataset.projects.find((item) => item.id === projectId);
+    if (project) {
+      const explanation = explainProjectStatus(
+        dataset.signals.filter((signal) => signal.projectId === projectId),
+      );
+      project.status = explanation.status;
+      project.statusReason = explanation.reason;
+      project.statusFactors = explanation.factors;
+    }
+  }
+  await writeDataset(dataset);
+}
+
+interface UpdateSignalReviewInput {
+  category?: DistressCategory;
+  severity?: Severity;
+  confidence?: Confidence;
+  interpretation?: string;
+  possibleConsequence?: string;
+  recommendedAction?: string;
+  alternativeExplanation?: string;
+  civilFirmRelevance?: string;
+  civilFirmOpportunityType?: CivilFirmOpportunityType;
+  buyerPersona?: string;
+}
+
+export async function updateSignalReviewMetadata(
+  signalId: string,
+  input: UpdateSignalReviewInput,
+): Promise<void> {
+  const dataset = await getDataset();
+  const signal = dataset.signals.find((item) => item.id === signalId);
+  if (!signal) throw new Error("Signal was not found.");
+  Object.assign(signal, input);
+  const quality = buildSignalQuality({
+    ...signal,
+    matchedTerm: signal.matchedTerms?.[0] ?? signal.signalType,
+  });
+  signal.severityReason = quality.severityReason;
+  signal.confidenceReason = quality.confidenceReason;
+  signal.scoringFactors = quality.scoringFactors;
+  if (!input.civilFirmRelevance) signal.civilFirmRelevance = quality.civilFirmRelevance;
+  if (!input.civilFirmOpportunityType) {
+    signal.civilFirmOpportunityType = quality.civilFirmOpportunityType;
+  }
+  if (!input.buyerPersona) signal.buyerPersona = quality.buyerPersona;
+  if (signal.projectId) {
+    const project = dataset.projects.find((item) => item.id === signal.projectId);
+    if (project) {
+      const explanation = explainProjectStatus(
+        dataset.signals.filter((item) => item.projectId === project.id),
+      );
+      project.status = explanation.status;
+      project.statusReason = explanation.reason;
+      project.statusFactors = explanation.factors;
+    }
+  }
   await writeDataset(dataset);
 }
