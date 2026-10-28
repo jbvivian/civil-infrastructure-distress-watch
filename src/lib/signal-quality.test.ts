@@ -27,7 +27,11 @@ describe("signal quality", () => {
     });
 
     expect(quality.severityReason).toContain("reject all bids");
-    expect(quality.confidenceReason).toContain("exact configured phrase");
+    // The confidence explanation must describe the context the term was found
+    // in. "The exact phrase appears" is true of every extraction and therefore
+    // tells a reviewer nothing.
+    expect(quality.confidenceReason).not.toContain("exact configured phrase");
+    expect(quality.confidenceReason).toContain("records a specific action");
     expect(quality.scoringFactors).toContain(
       "Matched deterministic term: reject all bids",
     );

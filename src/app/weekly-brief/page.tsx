@@ -4,8 +4,9 @@ import {
   WeeklyBriefList,
   type WeeklyBriefItem,
 } from "@/components/weekly-brief-list";
-import { selectWeeklyBriefSignals } from "@/lib/review-workflow";
+import { buildBriefEdition } from "@/lib/review-workflow";
 import { getDataset } from "@/lib/repository";
+import type { Signal } from "@/lib/types";
 
 export const metadata = { title: "Weekly Brief" };
 export const dynamic = "force-dynamic";
@@ -15,8 +16,12 @@ export default async function WeeklyBriefPage() {
   const projectMap = new Map(dataset.projects.map((project) => [project.id, project]));
   const documentMap = new Map(dataset.documents.map((document) => [document.id, document]));
   const sourceMap = new Map(dataset.sources.map((source) => [source.id, source]));
-  const signals = selectWeeklyBriefSignals(dataset.signals, 16)
-    .map((signal): WeeklyBriefItem | null => {
+
+  const edition = buildBriefEdition(dataset.signals, { windowDays: 7, limit: 16 });
+
+  const toItems = (input: Signal[]) =>
+    input
+      .map((signal): WeeklyBriefItem | null => {
       const project = signal.projectId ? projectMap.get(signal.projectId) : undefined;
       const document = documentMap.get(signal.sourceDocumentIds[0]);
       if (!document) return null;
@@ -38,20 +43,50 @@ export default async function WeeklyBriefPage() {
           signal.civilFirmOpportunityType ?? "Competitive intelligence only",
       };
     })
-    .filter((signal): signal is WeeklyBriefItem => signal !== null);
-  const reportingDate = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "America/New_York",
-  }).format(new Date());
+      .filter((signal): signal is WeeklyBriefItem => signal !== null);
+
+  const promoted = toItems(edition.promoted);
+  const newThisPeriod = toItems(edition.newThisPeriod);
+  const stillOpen = toItems(edition.stillOpen);
+  const undated = toItems(edition.undatedItems);
+
+  const formatDay = (value: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${value}T00:00:00Z`));
+
+  const sections: Array<{ title: string; note: string; items: WeeklyBriefItem[] }> = [
+    {
+      title: "Promoted review items",
+      note: "Manually prioritised by a reviewer.",
+      items: promoted,
+    },
+    {
+      title: "New this period",
+      note: "First appearance in a brief, with an event date inside the reporting window.",
+      items: newThisPeriod,
+    },
+    {
+      title: "Still open",
+      note: "Previously briefed, high severity, and confirmed again by a source during this window.",
+      items: stillOpen,
+    },
+    {
+      title: "Undated items",
+      note: "The event date could not be resolved from the source, so these are dated by retrieval and may be older than they appear.",
+      items: undated,
+    },
+  ];
 
   return (
     <>
       <PageHeading
-        eyebrow="Deterministic priority summary"
-        title="Weekly infrastructure review brief"
-        description="Promoted review items lead the brief, followed by deterministic severity and recency ranking. Dismissed signals are excluded."
+        eyebrow={`Reporting period ${formatDay(edition.windowStart)} to ${formatDay(edition.windowEnd)}`}
+        title="Infrastructure review brief"
+        description="Each edition covers events dated inside the reporting window. Items already sent in an earlier edition do not reappear unless a source has reconfirmed them."
         action={
           <a
             href="/api/weekly-brief"
@@ -61,23 +96,48 @@ export default async function WeeklyBriefPage() {
           </a>
         }
       />
-      <div className="panel mb-6 grid gap-4 bg-[#17324d] p-5 text-white md:grid-cols-3">
+      <div className="panel mb-6 grid gap-4 bg-[#17324d] p-5 text-white sm:grid-cols-2 md:grid-cols-4">
         <div>
-          <p className="text-xs uppercase tracking-wider text-slate-300">Reporting date</p>
-          <p className="mt-1 font-mono text-lg">{reportingDate}</p>
+          <p className="text-xs uppercase tracking-wider text-slate-300">New this period</p>
+          <p className="mt-1 font-mono text-lg">{edition.counts.newThisPeriod}</p>
         </div>
         <div>
-          <p className="text-xs uppercase tracking-wider text-slate-300">Priority signals</p>
-          <p className="mt-1 font-mono text-lg">{signals.length}</p>
+          <p className="text-xs uppercase tracking-wider text-slate-300">Still open</p>
+          <p className="mt-1 font-mono text-lg">{edition.counts.stillOpen}</p>
         </div>
         <div>
-          <p className="text-xs uppercase tracking-wider text-slate-300">Promoted items</p>
-          <p className="mt-1 font-mono text-lg">
-            {signals.filter((signal) => signal.promotedToBrief).length}
-          </p>
+          <p className="text-xs uppercase tracking-wider text-slate-300">Promoted</p>
+          <p className="mt-1 font-mono text-lg">{edition.counts.promoted}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-wider text-slate-300">Undated</p>
+          <p className="mt-1 font-mono text-lg">{edition.counts.undated}</p>
         </div>
       </div>
-      <WeeklyBriefList signals={signals} />
+
+      {edition.counts.total === 0 ? (
+        <div className="panel p-8 text-center">
+          <p className="text-sm font-semibold text-[#20394e]">
+            Nothing new in this reporting period.
+          </p>
+          <p className="mt-2 text-sm text-[#66717e]">
+            An empty edition means no source recorded a dated event in the window. That is a
+            result, not a failure. Run a scrape to check sources for new documents.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {sections
+            .filter((section) => section.items.length > 0)
+            .map((section) => (
+              <section key={section.title}>
+                <h2 className="text-lg font-semibold text-[#20394e]">{section.title}</h2>
+                <p className="mb-3 mt-1 text-sm text-[#66717e]">{section.note}</p>
+                <WeeklyBriefList signals={section.items} />
+              </section>
+            ))}
+        </div>
+      )}
     </>
   );
 }

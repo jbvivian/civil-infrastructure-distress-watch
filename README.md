@@ -22,11 +22,17 @@ and must not be used for real-world decisions.
 - Manual ingest workflow with deterministic rule-based extraction and review-before-save
 - Unassigned live-signal review, conservative project suggestions, promotion, dismissal, and assignment
 - Source-document detail pages with entity summaries and highlighted trigger terms
-- Deterministic weekly brief with promoted items first and Markdown export
+- Periodical brief with a reporting window, new/still-open/undated sections, and Markdown export
 - 18 fictional projects across Orange, Dutchess, Ulster, Sullivan, Putnam, Rockland, and
   Westchester counties
 - 36 source-backed fictional signals and 36 linked source documents
-- Unit tests for extraction and project status scoring
+- Sentence-level context evaluation that suppresses negated, tabular, definitional, and
+  off-domain matches with a stated reason for each
+- Event dating separate from crawl dating, with unresolved dates labelled
+- Signal-level identity so re-crawls update rather than duplicate
+- Unit tests for extraction, context suppression, event dating, signal identity, brief
+  editions, and project status scoring
+- `scripts/measure-extraction.ts` for measuring extractor changes against the local corpus
 
 ## Stack
 
@@ -48,6 +54,15 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+On an existing checkout with dependencies installed, `npm run dev` is sufficient to
+restart the app. On a fresh checkout, use `npm ci` first. No API key or database server
+is needed. Keep the terminal running while using the app.
+
+Start at `/admin/ingest` to refresh sources and `/signals` with **Live-source only**
+enabled to inspect real imported material. The dashboard and project watchlist still
+include fictional demonstration projects. Preserve `data/local-data.json` to retain
+imported documents and review decisions; `npm run seed` removes that local dataset.
 
 The app starts from the bundled seed data. Saving an ingested document creates
 `data/local-data.json`, which is intentionally ignored by Git.
@@ -137,8 +152,18 @@ The source registry is in `src/config/monitored-sources.ts`.
 | `live-nysdot-construction-results` | NYSDOT construction opportunities and results |
 | `live-nys-comptroller-audits` | NYS Comptroller local government audits |
 | `live-poughkeepsie-planning-board` | Town of Poughkeepsie Planning Board |
+| `live-sullivan-county-bids` | Sullivan County current bid notices |
+| `live-sullivan-county-proposals` | Sullivan County requests for proposals |
 
 ### Live test results
+
+Retested October 28, 2026: eight of the twelve configured sources succeeded, three
+returned HTTP 403 (Orange Public Works, Orange Legislature, and Ulster Public Works
+Committee), and Ulster active bids remained partial with only 20 readable characters.
+The two newly added Sullivan sources both imported successfully. The refresh imported
+nine documents and one new signal. An Admin rerun of Sullivan bids skipped its existing
+document as a duplicate. See `docs/live-sources.md` for the current source-by-source
+results and instructions for adding another source.
 
 Tested June 9, 2026:
 
@@ -222,21 +247,79 @@ bids`, `DEC approval`, `unsuitable soil`, `notice of claim`, and `resident conce
 - Recommended review action
 - Alternative explanation
 
+### Context evaluation
+
+A term appearing somewhere in a document is not evidence. Matching is done at
+sentence level and every occurrence is evaluated in context. An occurrence is
+suppressed, with a stated reason, when it is:
+
+- negated (`no change order will be required`, `to reduce the number of water main
+  breaks`)
+- inside a table of contents, budget table row, index line, or filename listing
+- definitional or policy boilerplate (`a watershed generally includes ... wetlands`)
+- in a plan, policy, or manual without any amount, identifier, or date that would make
+  it a specific event
+- an ambiguous term used outside the domain (`litigation` about an election law)
+- a short fragment with no verb and no amount, identifier, or date
+
+Specific evidence overrides formatting: a title-case agenda line is kept when it carries
+both an action verb and a dollar amount or resolution number, because `Resolution No.
+317 - Approving The Execution Of A Contract Amendment For $25,000.00` records an act
+even though it looks like a heading.
+
+Where a term appears several times, the strongest occurrence is reported rather than the
+first one in the document. Confidence is scored from that context, so it describes the
+evidence rather than restating that a string matched.
+
+Run `npx tsx scripts/measure-extraction.ts --verbose` to replay the extractor across the
+local corpus before and after any rule change. Rule changes without a measurement are
+guesses.
+
+### Event dating
+
+Signals carry `eventDate` (when the event appears to have happened) alongside
+`dateObserved` (when this system recorded it). The date is resolved from the evidence
+sentence, then the document title, then document metadata. Where none resolves, the
+fetch date is used and labelled `Fetch date (unresolved)` so it can be filtered rather
+than mistaken for a real date.
+
+### Signal identity
+
+Each signal carries a `fingerprint` derived from its source, matched term, and
+normalized evidence sentence, with `firstSeenAt`, `lastSeenAt`, and `timesSeen`.
+Re-crawling a page that changed by one byte updates the existing signals instead of
+appending duplicates, and a reviewer's assignment, promotion, or dismissal survives the
+re-crawl.
+
+### Project status
+
 Project status is derived using deterministic logic:
 
 - **Watch** — one weak signal
 - **Review** — one medium signal or multiple weak signals
 - **Escalated** — a high-severity signal or repeated cost/schedule/scope pressure
-- **Confirmed Issue** — explicit source language for an overrun, delay, claim,
+- **Documented Event** — explicit source language for an overrun, delay, claim,
   litigation, rebid, audit finding, or major rescope
 
-The label “Confirmed Issue” confirms the cited issue, not overall project failure.
+“Documented Event” states that a source records the cited event. It is not a finding
+that the project, the owner, or any vendor has done anything wrong, and it must not be
+presented as one.
 
 ## Known limitations
 
 - Seed records and URLs are fictional.
-- Matching and entity extraction are regex/rule based and do not resolve negation,
-  entity identity, document sections, or ambiguous organization names.
+- Matching and entity extraction are regex/rule based. Negation, list and table
+  formatting, definitional language, and off-domain use of ambiguous terms are handled;
+  entity identity, document section structure, and ambiguous organization names are not.
+- Context suppression trades recall for precision. On the June 2026 corpus it removed
+  roughly two thirds of extractions, nearly all of which were table rows, glossary
+  entries, and policy descriptions. Some genuine cues will be suppressed with them.
+  `scripts/measure-extraction.ts` exists so this trade is measured rather than assumed.
+- The corpus is thin: ten sources, and an index connector reads at most two linked
+  documents per run. Precision improvements do not compensate for that.
+- `robots.txt` is not checked and there is no per-host rate limiting. At least one
+  configured source disallows automated fetching of the configured path. This must be
+  resolved before the collector is pointed at real sources on any recurring basis.
 - File persistence is intended for one local user and is not concurrency-safe.
 - Live project matching requires an exact full name for automatic assignment. Suggested
   fuzzy matches remain unassigned and require review.

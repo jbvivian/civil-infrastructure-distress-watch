@@ -9,7 +9,7 @@ const statusStyles: Record<ProjectStatus, string> = {
   Watch: "border-slate-300 bg-slate-100 text-slate-700",
   Review: "border-blue-200 bg-blue-50 text-blue-800",
   Escalated: "border-amber-200 bg-amber-50 text-amber-800",
-  "Confirmed Issue": "border-red-200 bg-red-50 text-red-800",
+  "Documented Event": "border-red-200 bg-red-50 text-red-800",
 };
 
 const severityStyles: Record<Severity, string> = {

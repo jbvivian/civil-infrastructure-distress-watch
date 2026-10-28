@@ -55,6 +55,72 @@ in the source. Lower-confidence candidates were marked `Needs Review`.
 A repeat run imported no new documents or signals and reported all previously imported
 documents as duplicates.
 
+## October 28, 2026 verification
+
+The current local checkout passed lint, all 58 unit tests, and a production build.
+The browser verified the dashboard, the live-only Signals filter, source document
+inspection, and an Admin-triggered scrape with duplicate detection.
+
+| Source | Result | Notes |
+| --- | --- | --- |
+| Orange County Public Works | Failed | HTTP 403 Forbidden |
+| Orange County Legislature | Failed | HTTP 403 Forbidden |
+| Dutchess County Public Works | Success | HTML and two linked PDFs; one new document |
+| Dutchess County Capital Plan | Success | Existing PDF skipped as a duplicate |
+| Ulster Public Works Committee | Failed | HTTP 403 Forbidden |
+| Ulster active commodity bids | Partial | Only 20 readable characters in server HTML |
+| Ulster Capital Plan | Success | Existing PDF skipped as a duplicate |
+| NYSDOT construction results | Success | One new HTML document |
+| NYS Comptroller audits | Success | One new HTML document |
+| Poughkeepsie Planning Board | Success | HTML and two linked PDFs; one new review signal |
+| Sullivan County current bids | Success | New HTML source; one document, no rule matches |
+| Sullivan County proposals | Success | New HTML source; one document, no rule matches |
+
+Across this refresh, nine documents and one signal were imported. A second Sullivan
+bid scrape from the Admin page imported nothing and reported one duplicate skipped.
+Sources returning 403 were retained with their errors visible; no access protection
+was bypassed. A successful scrape means readable text was collected, not that any
+project distress was confirmed. Old imported false positives are not automatically
+re-extracted by a source refresh; review and dismiss them in the Signals ledger.
+
+## Add a source
+
+Edit `src/config/monitored-sources.ts` and add an entry with a unique, stable ID:
+
+```ts
+{
+  id: "live-example-county-bids",
+  name: "Example County current bids",
+  body: "Example County Purchasing",
+  jurisdiction: "Example County",
+  municipality: "Example County",
+  county: "Example",
+  type: "Procurement notice",
+  url: "https://example.gov/current-bids",
+  active: true,
+  scrapeEnabled: true,
+  connector: "html",
+  connectorType: "HTML",
+},
+```
+
+Use `html` / `HTML` for a readable page, `pdf` / `PDF` for a direct PDF, or
+`index` / `IndexPage` plus `maxLinkedDocuments: 2` for a page with direct document
+links. Avoid portal landing pages that only link to a login or registration service.
+Prefer specific meeting or notice pages over general department homepages.
+
+Then run:
+
+```bash
+npm run source:list
+npm run scrape:source -- live-example-county-bids
+```
+
+The source automatically appears on `/admin/ingest` and `/sources`; no database
+migration is needed. Inspect the imported text and any signals, then repeat the scrape
+to confirm deduplication. New source registration currently requires editing this file;
+the Admin page runs configured sources but does not provide an Add Source form.
+
 ## Next connector improvements
 
 1. Add OCR for scanned agendas and minutes.

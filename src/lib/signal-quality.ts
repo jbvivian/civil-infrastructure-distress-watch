@@ -73,6 +73,7 @@ const relevanceByCategory: Record<
 export function buildSignalQuality(
   signal: Pick<Signal, "category" | "severity" | "confidence" | "evidenceExcerpt"> & {
     matchedTerm?: string;
+    confidenceFactors?: string[];
   },
 ) {
   const matchedTerm = signal.matchedTerm ?? "configured rule language";
@@ -82,12 +83,19 @@ export function buildSignalQuality(
       : signal.severity === "Medium"
         ? `Medium severity because "${matchedTerm}" may affect cost, scope, approvals, delivery, or governance but requires supporting project context.`
         : `Low severity because the source language is an early review cue without an explicit material consequence.`;
-  const confidenceReason =
-    signal.confidence === "High"
-      ? `High extraction confidence because the exact configured phrase "${matchedTerm}" appears in the source text.`
+
+  // Confidence must describe the context the term was found in. Saying "high
+  // confidence because the phrase appears" only restates that a string matched,
+  // which is true of every extraction and therefore tells a reviewer nothing.
+  const factors = signal.confidenceFactors ?? [];
+  const confidenceReason = factors.length
+    ? `${signal.confidence} confidence. ${factors.join(" ")}`
+    : signal.confidence === "High"
+      ? `High confidence because "${matchedTerm}" appears in a complete sentence that records a specific action, amount, or date.`
       : signal.confidence === "Medium"
-        ? "Medium confidence because the source supports the theme but project-specific context is limited."
-        : "Low confidence because the source language is indirect or incomplete.";
+        ? `Medium confidence because "${matchedTerm}" appears in readable prose but the surrounding text does not record a specific action, amount, or date.`
+        : `Low confidence because "${matchedTerm}" appears without supporting context, or in language describing planned rather than recorded activity.`;
+
   const commercial = relevanceByCategory[signal.category];
 
   return {
@@ -98,6 +106,7 @@ export function buildSignalQuality(
       `Category: ${signal.category}`,
       `Severity: ${signal.severity}`,
       `Confidence: ${signal.confidence}`,
+      ...factors,
     ],
     civilFirmRelevance: commercial.relevance,
     civilFirmOpportunityType: commercial.opportunityType,
@@ -120,9 +129,9 @@ export function explainProjectStatus(signals: Signal[]): ProjectStatusExplanatio
   );
   if (explicit) {
     return {
-      status: "Confirmed Issue",
+      status: "Documented Event",
       reason:
-        "Confirmed Issue because a cited source explicitly records a defined delay, claim, rebid, audit finding, overrun, or major rescope.",
+        "Documented Event because a cited source explicitly records a defined delay, claim, rebid, audit finding, overrun, or major rescope.",
       factors: [`Explicit source language in: ${explicit.title}`],
     };
   }

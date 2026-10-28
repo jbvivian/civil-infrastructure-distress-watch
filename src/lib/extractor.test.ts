@@ -42,7 +42,7 @@ describe("deriveProjectStatus", () => {
       deriveProjectStatus([
         { ...baseSignal, evidenceExcerpt: "The owner voted to reject all bids and rebid." },
       ]),
-    ).toBe("Confirmed Issue");
+    ).toBe("Documented Event");
   });
 
   it("places a medium signal in review", () => {

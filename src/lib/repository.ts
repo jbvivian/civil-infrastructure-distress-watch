@@ -9,6 +9,8 @@ import {
   dismissSignal,
   promoteSignal,
 } from "@/lib/review-workflow";
+import { resolveEventDate } from "@/lib/event-date";
+import { signalFingerprint, upsertSignals } from "@/lib/signal-identity";
 import { cleanReadableText, type ScrapedDocument } from "@/lib/scraper";
 import {
   buildSignalQuality,
@@ -83,6 +85,27 @@ export function normalizeDataset(dataset: Dataset): Dataset {
       signal.dataOrigin ?? (signal.id.startsWith("signal-local-") ? "Manual" : "Seed");
     const sourceDocumentId = signal.sourceDocumentId ?? signal.sourceDocumentIds[0];
     const document = documentMap.get(sourceDocumentId);
+
+    // Backfill identity and event dating for datasets written before these
+    // existed, so an existing local dataset migrates on read rather than
+    // requiring a reset.
+    const fingerprint =
+      signal.fingerprint ??
+      signalFingerprint({
+        sourceId: document?.sourceId ?? sourceDocumentId ?? signal.id,
+        matchedTerm,
+        evidenceExcerpt: signal.evidenceExcerpt,
+        category: signal.category,
+      });
+    const resolvedDate =
+      signal.eventDate && signal.eventDateSource
+        ? { date: signal.eventDate, source: signal.eventDateSource }
+        : resolveEventDate({
+            evidenceText: signal.evidenceExcerpt,
+            documentTitle: document?.title,
+            documentPublishedAt: document?.publishedAt,
+            fetchedAt: document?.fetchedAt ?? signal.dateObserved,
+          });
     const dismissed = signal.dismissed ?? false;
     const promotedToBrief = dismissed ? false : signal.promotedToBrief ?? false;
     const signalReviewStatus = dismissed
@@ -95,6 +118,12 @@ export function normalizeDataset(dataset: Dataset): Dataset {
     return {
       ...signal,
       projectId,
+      fingerprint,
+      eventDate: resolvedDate.date,
+      eventDateSource: resolvedDate.source,
+      firstSeenAt: signal.firstSeenAt ?? document?.fetchedAt ?? signal.dateObserved,
+      lastSeenAt: signal.lastSeenAt ?? document?.fetchedAt ?? signal.dateObserved,
+      timesSeen: signal.timesSeen ?? 1,
       reviewStatus: signalReviewStatus,
       assignmentStatus:
         signal.assignmentStatus ?? (projectId ? "Assigned" : "Needs Review"),
@@ -315,6 +344,8 @@ export interface ScrapePersistenceResult {
   documentsImported: number;
   duplicateDocumentsSkipped: number;
   signalsExtracted: number;
+  /** Signals already known by fingerprint, updated rather than appended. */
+  duplicateSignalsMerged: number;
   errorMessage?: string;
 }
 
@@ -422,6 +453,7 @@ export async function completeScrapeRun(
   let documentsImported = 0;
   let duplicateDocumentsSkipped = 0;
   let signalsExtracted = 0;
+  let duplicateSignalsMerged = 0;
 
   for (const scraped of input.documents) {
     const duplicate = isDuplicateDocument(dataset.documents, scraped.contentHash);
@@ -460,10 +492,27 @@ export async function completeScrapeRun(
         fictional: false,
       });
 
-      const extracted = extractSignals(scraped.text);
-      const newSignals = extracted.map((signal) => ({
+      const extracted = extractSignals(scraped.text, {
+        documentTitle: scraped.title,
+      });
+      const newSignals = extracted.map((signal) => {
+        const resolved = resolveEventDate({
+          evidenceText: signal.evidenceExcerpt,
+          documentTitle: scraped.title,
+          documentPublishedAt: scraped.publishedAt,
+          fetchedAt: scraped.fetchedAt,
+        });
+        return {
         ...signal,
         id: `signal-live-${randomUUID()}`,
+        fingerprint: signalFingerprint({
+          sourceId: input.sourceId,
+          matchedTerm: signal.matchedTerm,
+          evidenceExcerpt: signal.evidenceExcerpt,
+          category: signal.category,
+        }),
+        eventDate: resolved.date,
+        eventDateSource: resolved.source,
         projectId: match.project?.id ?? null,
         sourceDocumentIds: [documentId],
         dateObserved: observedAt,
@@ -488,12 +537,19 @@ export async function completeScrapeRun(
           ? ("Assigned" as const)
           : ("Needs Review" as const),
         extractedEntities,
-      }));
-      dataset.signals.push(...newSignals);
-      signalsExtracted += newSignals.length;
+        };
+      });
+
+      // Merge on signal identity rather than appending. A page that changed by one
+      // byte must not re-emit every signal it already produced, and a reviewer's
+      // assignment or dismissal must survive a re-crawl.
+      const merge = upsertSignals(dataset.signals, newSignals, scraped.fetchedAt);
+      dataset.signals = merge.signals;
+      signalsExtracted += merge.created.length;
+      duplicateSignalsMerged += merge.updated.length;
       documentsImported += 1;
       input.logLines.push(
-        `Imported ${scraped.title}; extracted ${newSignals.length} signal${newSignals.length === 1 ? "" : "s"}.`,
+        `Imported ${scraped.title}; ${merge.created.length} new signal${merge.created.length === 1 ? "" : "s"}, ${merge.updated.length} already known.`,
       );
 
       if (match.project && newSignals.length > 0) {
@@ -528,6 +584,7 @@ export async function completeScrapeRun(
     documentsImported,
     duplicateDocumentsSkipped,
     signalsExtracted,
+    duplicateSignalsMerged,
     errorMessage: input.errorMessage,
     urlFetched: input.url,
     url: input.url,
@@ -544,6 +601,7 @@ export async function completeScrapeRun(
     documentsImported,
     duplicateDocumentsSkipped,
     signalsExtracted,
+    duplicateSignalsMerged,
     errorMessage: input.errorMessage,
   };
 }

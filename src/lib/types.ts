@@ -1,8 +1,15 @@
+/**
+ * Status names describe what the evidence shows, not a conclusion about the
+ * project. "Documented Event" replaces the earlier "Confirmed Issue": the system
+ * can confirm that a source records a delay, claim, rebid or audit finding, but
+ * it cannot confirm that anything is wrong, and a badge attached to a real
+ * municipality or contractor must not imply that it can.
+ */
 export const projectStatuses = [
   "Watch",
   "Review",
   "Escalated",
-  "Confirmed Issue",
+  "Documented Event",
 ] as const;
 
 export const distressCategories = [
@@ -102,6 +109,15 @@ export interface Project {
   statusFactors?: string[];
 }
 
+/** How the event date attached to a signal was arrived at. */
+export const eventDateSources = [
+  "Source text",
+  "Document metadata",
+  "Document published date",
+  "Fetch date (unresolved)",
+] as const;
+export type EventDateSource = (typeof eventDateSources)[number];
+
 export interface Signal {
   id: string;
   projectId: string | null;
@@ -109,7 +125,15 @@ export interface Signal {
   title: string;
   category: DistressCategory;
   signalType: string;
+  /** Date the signal was recorded by this system. Retained for audit. */
   dateObserved: string;
+  /**
+   * Date the underlying event appears to have happened. This is what the
+   * watchlist and the weekly brief sort and window on. `eventDateSource` says
+   * how it was resolved so an unresolved date is visible rather than assumed.
+   */
+  eventDate?: string;
+  eventDateSource?: EventDateSource;
   evidenceExcerpt: string;
   interpretation: string;
   possibleConsequence: string;
@@ -143,6 +167,20 @@ export interface Signal {
   civilFirmRelevance?: string;
   civilFirmOpportunityType?: CivilFirmOpportunityType;
   buyerPersona?: string;
+  /** Plain-language reasons behind the confidence value. */
+  confidenceFactors?: string[];
+  /**
+   * Stable identity derived from source, evidence sentence, and matched term.
+   * Re-seeing the same underlying statement updates the existing signal instead
+   * of appending a near-duplicate row.
+   */
+  fingerprint?: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  timesSeen?: number;
+  /** Editions of the weekly brief this signal has already appeared in. */
+  briefEditions?: string[];
+  firstBriefedAt?: string;
 }
 
 export interface Source {
@@ -207,6 +245,8 @@ export interface ScrapeRun {
   httpStatus?: number;
   documentsImported?: number;
   duplicateDocumentsSkipped?: number;
+  /** Signals recognised by fingerprint and updated rather than appended. */
+  duplicateSignalsMerged?: number;
   logLines?: string[];
 }
 

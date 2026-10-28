@@ -1,4 +1,5 @@
 import {
+  type Confidence,
   type DistressCategory,
   type ExtractedSignal,
   type ProjectStatus,
@@ -6,6 +7,12 @@ import {
   type Severity,
 } from "@/lib/types";
 import { buildSignalQuality, explainProjectStatus } from "@/lib/signal-quality";
+import {
+  type ContextEvaluation,
+  type SuppressionKind,
+  evaluateContext,
+  splitIntoSentences,
+} from "@/lib/text-context";
 
 interface Rule {
   terms: string[];
@@ -13,6 +20,12 @@ interface Rule {
   severity: Severity;
   title: string;
   signalType: string;
+  /**
+   * Set where the rule's terms are common in records that have nothing to do
+   * with a capital project. "litigation" matches an election-law lawsuit;
+   * "wetlands" matches a conservation programme description.
+   */
+  requiresInfrastructureContext?: boolean;
 }
 
 const rules: Rule[] = [
@@ -57,6 +70,7 @@ const rules: Rule[] = [
     severity: "High",
     title: "Contractual dispute requires review",
     signalType: "Claim or dispute",
+    requiresInfrastructureContext: true,
   },
   {
     terms: ["executive session", "public complaint", "resident concern"],
@@ -64,6 +78,7 @@ const rules: Rule[] = [
     severity: "Medium",
     title: "Public or governance concern recorded",
     signalType: "Governance concern",
+    requiresInfrastructureContext: true,
   },
   {
     terms: ["grant deadline"],
@@ -78,6 +93,7 @@ const rules: Rule[] = [
     severity: "Medium",
     title: "External approval remains a delivery dependency",
     signalType: "Permit or approval",
+    requiresInfrastructureContext: true,
   },
   {
     terms: [
@@ -196,46 +212,129 @@ const categoryCopy: Record<
   },
 };
 
-function excerptAround(text: string, term: string): string {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  const index = normalized.toLowerCase().indexOf(term);
-  const start = Math.max(0, index - 90);
-  const end = Math.min(normalized.length, index + term.length + 130);
-  return `${start > 0 ? "..." : ""}${normalized.slice(start, end)}${
-    end < normalized.length ? "..." : ""
-  }`;
+function excerpt(sentence: string): string {
+  const normalized = sentence.replace(/\s+/g, " ").trim();
+  return normalized.length <= 320 ? normalized : `${normalized.slice(0, 317)}...`;
 }
 
-export function extractSignals(text: string): ExtractedSignal[] {
-  const lowerText = text.toLowerCase();
-  const found = new Map<string, ExtractedSignal>();
+export interface SuppressedMatch {
+  term: string;
+  category: DistressCategory;
+  kind: SuppressionKind;
+  reason: string;
+  sentence: string;
+}
+
+export interface ExtractionResult {
+  signals: ExtractedSignal[];
+  suppressed: SuppressedMatch[];
+}
+
+export interface ExtractOptions {
+  documentTitle?: string;
+  /**
+   * Lowest confidence that may become a signal. Occurrences below this are
+   * recorded as suppressed rather than surfaced. Defaults to "Low" so nothing
+   * is silently discarded unless a caller asks for it.
+   */
+  minimumConfidence?: Confidence;
+}
+
+const confidenceRank: Record<Confidence, number> = { Low: 0, Medium: 1, High: 2 };
+
+/**
+ * Extracts review cues from document text.
+ *
+ * Every occurrence of every configured term is evaluated in its own sentence.
+ * Occurrences that are negated, sitting in a table of contents, or part of
+ * definitional or policy boilerplate are suppressed with a stated reason. Where a
+ * term appears several times, the strongest surviving occurrence wins rather than
+ * the first one in the document.
+ */
+export function extractSignalsWithDiagnostics(
+  text: string,
+  options: ExtractOptions = {},
+): ExtractionResult {
+  const { documentTitle = "", minimumConfidence = "Low" } = options;
+  const sentences = splitIntoSentences(text);
+  const best = new Map<string, { evaluation: ContextEvaluation; rule: Rule; term: string }>();
+  const suppressed: SuppressedMatch[] = [];
 
   for (const rule of rules) {
     for (const term of rule.terms) {
-      if (!lowerText.includes(term)) continue;
       const key = `${rule.category}:${term}`;
-      found.set(key, {
-        title: rule.title,
-        category: rule.category,
-        signalType: rule.signalType,
-        severity: rule.severity,
-        confidence: "High",
-        evidenceExcerpt: excerptAround(text, term),
-        matchedTerm: term,
-        matchedTerms: [term],
-        ...categoryCopy[rule.category],
-        ...buildSignalQuality({
-          category: rule.category,
-          severity: rule.severity,
-          confidence: "High",
-          evidenceExcerpt: excerptAround(text, term),
-          matchedTerm: term,
-        }),
-      });
+      for (const sentence of sentences) {
+        if (!sentence.toLowerCase().includes(term)) continue;
+        const evaluation = evaluateContext({
+          sentence,
+          term,
+          documentTitle,
+          requiresInfrastructureContext: rule.requiresInfrastructureContext,
+        });
+
+        if (evaluation.suppressed) {
+          suppressed.push({
+            term,
+            category: rule.category,
+            kind: evaluation.suppressionKind ?? "Insufficient context",
+            reason: evaluation.suppressionReason ?? "Suppressed by context evaluation.",
+            sentence: excerpt(evaluation.sentence),
+          });
+          continue;
+        }
+
+        const existing = best.get(key);
+        if (!existing || evaluation.score > existing.evaluation.score) {
+          best.set(key, { evaluation, rule, term });
+        }
+      }
     }
   }
 
-  return [...found.values()];
+  const signals: ExtractedSignal[] = [];
+  for (const { evaluation, rule, term } of best.values()) {
+    if (confidenceRank[evaluation.confidence] < confidenceRank[minimumConfidence]) {
+      suppressed.push({
+        term,
+        category: rule.category,
+        kind: "Insufficient context",
+        reason: `Suppressed because confidence resolved to ${evaluation.confidence}, below the configured minimum of ${minimumConfidence}.`,
+        sentence: excerpt(evaluation.sentence),
+      });
+      continue;
+    }
+
+    const evidenceExcerpt = excerpt(evaluation.sentence);
+    signals.push({
+      title: rule.title,
+      category: rule.category,
+      signalType: rule.signalType,
+      severity: rule.severity,
+      confidence: evaluation.confidence,
+      evidenceExcerpt,
+      matchedTerm: term,
+      matchedTerms: [term],
+      confidenceFactors: evaluation.confidenceFactors,
+      ...categoryCopy[rule.category],
+      ...buildSignalQuality({
+        category: rule.category,
+        severity: rule.severity,
+        confidence: evaluation.confidence,
+        evidenceExcerpt,
+        matchedTerm: term,
+        confidenceFactors: evaluation.confidenceFactors,
+      }),
+    });
+  }
+
+  return { signals, suppressed };
+}
+
+export function extractSignals(
+  text: string,
+  options: ExtractOptions = {},
+): ExtractedSignal[] {
+  return extractSignalsWithDiagnostics(text, options).signals;
 }
 
 export function deriveProjectStatus(signals: Signal[]): ProjectStatus {

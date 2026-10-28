@@ -38,7 +38,7 @@ These are review aids, not resolved entities.
 ## Deterministic explanations
 
 Severity and confidence explanations cite the matched rule term and category. Project
-status explanations use active, non-dismissed signals. `Confirmed Issue` requires
+status explanations use active, non-dismissed signals. `Documented Event` requires
 explicit source language for a defined delay, overrun, claim, litigation, rebid, audit
 finding, or major rescope; it does not mean the overall project has failed.
 

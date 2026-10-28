@@ -13,12 +13,12 @@ import { formatDate } from "@/lib/format";
 import { getDataset } from "@/lib/repository";
 import type { DistressCategory, ProjectStatus } from "@/lib/types";
 
-const statusOrder: ProjectStatus[] = ["Watch", "Review", "Escalated", "Confirmed Issue"];
+const statusOrder: ProjectStatus[] = ["Watch", "Review", "Escalated", "Documented Event"];
 const statusIcons = {
   Watch: Radar,
   Review: ClipboardCheck,
   Escalated: AlertTriangle,
-  "Confirmed Issue": FileSearch,
+  "Documented Event": FileSearch,
 };
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export default async function HomePage() {
     .sort((a, b) => b.dateObserved.localeCompare(a.dateObserved))
     .slice(0, 6);
   const reviewProjects = dataset.projects
-    .filter((project) => project.status === "Escalated" || project.status === "Confirmed Issue")
+    .filter((project) => project.status === "Escalated" || project.status === "Documented Event")
     .sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated))
     .slice(0, 6);
 
